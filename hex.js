@@ -24,31 +24,57 @@ export class HexGrid {
         // 맵 크기 설정 (직사각형 22x12)
         this.mapCols = 22;
         this.mapRows = 12;
+        
+        this.scale = 1.0; // 줌 스케일 초기값
 
-        // 중앙 정렬 오프셋 (1920x1080 기준)
-        const mapPixelWidth = this.mapCols * Math.sqrt(3) * HEX_SIZE;
-        const mapPixelHeight = this.mapRows * 1.5 * HEX_SIZE;
-
-        this.startX = (1920 - mapPixelWidth) / 2 + 50; 
-        this.startY = (1080 - mapPixelHeight) / 2 + 50;
+        // 중앙 정렬 오프셋 (초기값)
+        this.startX = 0;
+        this.startY = 0;
 
         // 최적화용 오프스크린 캔버스
         this.offscreenCanvas = document.createElement('canvas');
-        this.offscreenCanvas.width = 1920 + HEX_SIZE * 2;
-        this.offscreenCanvas.height = 1080 + HEX_SIZE * 2;
         this.offCtx = this.offscreenCanvas.getContext('2d');
         
+        // [수정] 초기화 순서 명확화: 버퍼 크기/오프셋 계산 -> 그리드 좌표 생성 -> 프리렌더링
+        this.resizeOffscreenBuffer();
         this.initGrid();
         this.prerenderGrid();
     }
 
+    setScale(newScale) {
+        this.scale = Math.max(0.5, Math.min(2.0, newScale)); // 0.5 ~ 2.0 배율 제한
+        this.resizeOffscreenBuffer(); // 스케일 변경 시 버퍼 크기 재조정
+        // 스케일이 바뀌면 좌표도 바뀌므로 initGrid 다시 필요할 수 있으나, 
+        // 현재 로직상 drawHex시 pixel 변환을 하므로 prerender만 다시 해도 됨.
+        // 하지만 hexes 내부의 x,y 캐싱값을 쓴다면 initGrid도 필요. 
+        // 여기서는 hexes에 x,y를 저장하고 있으므로 initGrid 재호출 권장.
+        this.initGrid(); 
+        this.prerenderGrid();
+    }
+
+    // 맵 전체 크기를 계산하여 오프스크린 캔버스 크기 조정 및 startX 설정
+    resizeOffscreenBuffer() {
+        const scaledHexSize = HEX_SIZE * this.scale;
+        const mapPixelWidth = this.mapCols * Math.sqrt(3) * scaledHexSize;
+        const mapPixelHeight = this.mapRows * 1.5 * scaledHexSize;
+        
+        // 여유 공간 포함
+        this.offscreenCanvas.width = mapPixelWidth + scaledHexSize * 2;
+        this.offscreenCanvas.height = mapPixelHeight + scaledHexSize * 2;
+        
+        // [중요] startX, startY 설정 (이 값이 initGrid보다 먼저 설정되어야 함)
+        this.startX = scaledHexSize; 
+        this.startY = scaledHexSize;
+    }
+
     drawHex(ctx, x, y, color, stroke, width = 1) {
+        const size = HEX_SIZE * this.scale;
         ctx.beginPath();
         for (let i = 0; i < 6; i++) {
             const angle_deg = 60 * i + 30; 
             const angle_rad = Math.PI / 180 * angle_deg;
-            const px = x + HEX_SIZE * Math.cos(angle_rad);
-            const py = y + HEX_SIZE * Math.sin(angle_rad);
+            const px = x + size * Math.cos(angle_rad);
+            const py = y + size * Math.sin(angle_rad);
             if (i === 0) ctx.moveTo(px, py);
             else ctx.lineTo(px, py);
         }
@@ -58,33 +84,41 @@ export class HexGrid {
     }
 
     initGrid() {
+        this.hexes.clear();
         for (let r = 0; r < this.mapRows; r++) {
             for (let c = 0; c < this.mapCols; c++) {
                 const q = c - (r - (r & 1)) / 2;
                 const r_coord = r; 
 
+                // resizeOffscreenBuffer에서 설정된 startX, startY를 사용
                 const {x, y} = this.hexToPixelRaw(q, r_coord);
-                
-                if (x > -HEX_SIZE && x < 1920 + HEX_SIZE && y > -HEX_SIZE && y < 1080 + HEX_SIZE) {
-                    this.hexes.set(`${q},${r_coord}`, { q, r: r_coord, x, y, col: c, row: r });
-                }
+                // 맵 전체를 등록
+                this.hexes.set(`${q},${r_coord}`, { q, r: r_coord, x, y, col: c, row: r });
             }
         }
     }
 
     prerenderGrid() {
         this.offCtx.clearRect(0, 0, this.offscreenCanvas.width, this.offscreenCanvas.height);
-        this.offCtx.fillStyle = "#050505";
+        // 배경색 (#viewport 배경과 구분되도록 함, 어차피 캔버스 배경은 투명하거나 CSS 따름)
+        // 여기서는 오프스크린 캔버스 자체 배경을 그림
+        this.offCtx.fillStyle = "#080808"; 
         this.offCtx.fillRect(0, 0, this.offscreenCanvas.width, this.offscreenCanvas.height);
         
+        // 그리드 다시 그리기 (스케일 반영됨)
         this.hexes.forEach(h => {
-            this.drawHex(this.offCtx, h.x, h.y, "#1a1a1a", "#333", 1);
+            const pos = this.hexToPixelRaw(h.q, h.r);
+            // [수정] 시인성 개선 (Visual Contrast Issue 해결)
+            // 기존: Fill #1a1a1a, Stroke #333
+            // 변경: Fill #222222 (조금 더 밝음), Stroke #505050 (훨씬 잘 보임)
+            this.drawHex(this.offCtx, pos.x, pos.y, "#222222", "#505050", 1);
         });
     }
 
     hexToPixelRaw(q, r) {
-        const x = HEX_SIZE * (Math.sqrt(3) * q + Math.sqrt(3)/2 * r);
-        const y = HEX_SIZE * (3/2 * r);
+        const size = HEX_SIZE * this.scale;
+        const x = size * (Math.sqrt(3) * q + Math.sqrt(3)/2 * r);
+        const y = size * (3/2 * r);
         return { 
             x: x + this.startX, 
             y: y + this.startY 
@@ -95,13 +129,14 @@ export class HexGrid {
         return this.hexToPixelRaw(q, r);
     }
 
-    // [핵심 수정] 입력받는 mx, my는 '카메라와 오프셋이 반영된 절대 월드 좌표'여야 함
+    // [핵심] 줌 스케일 반영된 역산
     pixelToHex(worldX, worldY) {
         let x = worldX - this.startX;
         let y = worldY - this.startY;
+        const size = HEX_SIZE * this.scale;
 
-        const q = (Math.sqrt(3)/3 * x - 1/3 * y) / HEX_SIZE;
-        const r = (2/3 * y) / HEX_SIZE;
+        const q = (Math.sqrt(3)/3 * x - 1/3 * y) / size;
+        const r = (2/3 * y) / size;
         return this.cubeToAxial(this.cubeRound(this.axialToCube(q, r)));
     }
     
@@ -158,7 +193,6 @@ export class HexGrid {
         return results;
     }
 
-    // A* 길찾기
     findPath(start, end, isWalkable) {
         let frontier = [start];
         let cameFrom = new Map();
