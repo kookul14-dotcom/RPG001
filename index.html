@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Hex RPG: Legends</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚔️</text></svg>">
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -11,7 +12,7 @@
     <div class="title-container">
         <h1 class="game-title">HEX RPG</h1>
         <p class="click-start">Click to Start</p>
-        <p style="color:#666; font-size:12px; margin-top:50px;">(이어하기: 데이터가 있으면 자동 로드)</p>
+        <p class="sub-text">(이어하기: 데이터가 있으면 자동 로드)</p>
     </div>
 </div>
 
@@ -52,8 +53,9 @@
             <div id="party-list"></div>
         </div>
         <div id="viewport">
-            <canvas id="gridCanvas" width="1920" height="1080"></canvas>
+            <canvas id="gridCanvas"></canvas>
             <div id="overlay-layer"></div>
+            <div id="zoom-hint">🖱️ Wheel to Zoom</div>
         </div>
         <div id="sidebar-right" class="panel">
             <div class="panel-header">Combat Log</div>
@@ -84,7 +86,54 @@
 </div>
 
 <div id="global-tooltip" class="tooltip-box"></div>
+<div id="scene-battle-prep" class="scene" style="background:rgba(0,0,0,0.98); flex-direction:column;">
+    <div class="prep-header">
+        <h2 id="prep-title" style="color:gold; font-family: 'Orbitron'; margin:0; font-size: 20px;">BATTLE PREPARATION</h2>
+        <button class="close-btn" onclick="game.closePrep()">나가기</button>
+    </div>
 
+    <div class="prep-container">
+        <div class="prep-top-row">
+            
+            <div class="prep-col-left prep-panel">
+                <div class="panel-header">DEPLOYED (Select Leader)</div>
+                <div id="prep-deployed-list" class="deployed-list"></div> 
+                <div style="padding:10px; font-size:11px; color:#666; text-align:center; border-top:1px solid #333;">
+                    클릭하여 <span style="color:gold">리더(👑)</span> 설정
+                </div>
+            </div>
+
+            <div class="prep-col-center">
+                <div class="prep-map-wrapper">
+                    <div id="prep-minimap" class="minimap-grid-layer"></div>
+                    <div style="position:absolute; left:50%; top:5%; bottom:5%; width:0; border-left:1px dashed rgba(255,255,255,0.2); pointer-events:none;"></div>
+                    <div style="position:absolute; bottom:10px; left:20%; color:#48f; font-size:12px; font-weight:bold; opacity:0.5; pointer-events:none;">아군 진영</div>
+                    <div style="position:absolute; bottom:10px; right:20%; color:#f44; font-size:12px; font-weight:bold; opacity:0.5; pointer-events:none;">적군 진영</div>
+                </div>
+                <div style="height:30px; display:flex; align-items:center; justify-content:center; gap:20px; background:#111; border-top:1px solid #333;">
+                    <div style="font-size:12px; color:#aaa;">배치 인원: <span id="prep-count" style="color:gold; font-weight:bold;">0 / 6</span></div>
+                </div>
+            </div>
+
+            <div class="prep-col-right prep-panel">
+                <div class="panel-header">ENEMY INTEL</div>
+                <div id="prep-enemy-list" class="enemy-list"></div>
+                <div id="prep-tip" style="padding:10px; font-size:11px; color:#aaa; border-top:1px solid #333; background:#181818;"></div>
+            </div>
+        </div>
+
+        <div class="prep-bottom-row prep-panel">
+            <div class="panel-header">MY HERO ROSTER (드래그하여 미니맵에 배치하세요)</div>
+            <div id="prep-roster" class="roster-scroll-area"></div>
+        </div>
+    </div>
+
+    <div class="prep-footer">
+        <button class="prep-btn auto" onclick="game.autoFormParty()">⚡ 자동 편성</button>
+        <button class="prep-btn" onclick="game.clearParty()">🗑️ 모두 제거</button>
+        <button class="prep-btn start" onclick="game.confirmBattleStart()">⚔️ 전투 시작</button>
+    </div>
+</div>
 <div id="system-modal" class="modal-overlay" style="display:none;">
     <div class="system-modal-box">
         <div class="sys-msg" id="sys-modal-msg">메시지</div>
