@@ -14,7 +14,7 @@ let rawGameState = {
     shopStock: [] 
 };
 
-// 2. 저장 성능 최적화
+// 2. 저장 성능 최적화 (저장하지 않을 속성들)
 const IGNORED_PROPS = new Set([
     'shake', 'bumpX', 'bumpY', 't', 'tx', 'ty', 'isAnimating', 'projectiles', 'textQueue', 'lastTextTime', 'actionGauge'
 ]);
@@ -77,6 +77,8 @@ class GameApp {
         hero[statKey]++;
         hero.statPoints -= cost;
         
+        // 스탯 투자 시 즉각적인 자원 변동 (체력/마나)
+        // VIT 1당 HP +10, INT 1당 MP +5
         if (statKey === 'vit') { hero.hp += 10; hero.curHp += 10; }
         else if (statKey === 'int') { hero.mp += 5; hero.curMp += 5; }
         
@@ -84,9 +86,13 @@ class GameApp {
     }
 
     init() {
+        // 저장된 영웅이 없으면(게임 처음 시작 시) 10종 직업 모두 추가
         if(GameState.heroes.length === 0) {
-            this.addHero('KNIGHT');
-            this.addHero('MAGE');
+            const allHeroes = [
+                'WARRIOR', 'KNIGHT', 'MONK', 'ROGUE', 'ARCHER', 
+                'SORCERER', 'CLERIC', 'BARD', 'DANCER', 'ALCHEMIST'
+            ];
+            allHeroes.forEach(key => this.addHero(key));
         }
         
         if(GameState.shopStock.length === 0) this.refreshShopStock();
@@ -150,18 +156,15 @@ class GameApp {
     }
 
     // ============================================================
-    // [수정됨] 전투 준비 (Battle Prep) 관련 로직 시작
+    // 전투 준비 (Battle Prep)
     // ============================================================
 
     openBattlePrep(chapter, stage) {
         this.showScene('scene-battle-prep');
         
-        // 파티 상태 초기화
         this.prepState = {
             chapter: chapter,
             stage: stage,
-            // party: [{hero:Object, q:Int, r:Int, rosterIdx:Int}, ...]
-            // rosterIdx: GameState.heroes 내에서의 인덱스 (중복 비교용)
             party: [], 
             leaderIdx: 0 
         };
@@ -169,11 +172,11 @@ class GameApp {
         this.renderPrepUI();
     }
 
-    // [추가됨] 나가기 버튼 기능
     closePrep() {
         this.showScene('scene-stage-select');
     }
 
+    // [main.js] renderPrepUI 함수 (전투 준비 화면 - 파싱 로직 적용)
     renderPrepUI() {
         const { chapter, stage, party, leaderIdx } = this.prepState;
         
@@ -183,7 +186,7 @@ class GameApp {
         const mapWrapper = document.getElementById('prep-minimap');
         mapWrapper.innerHTML = '';
 
-        // 1. 미니맵 그리드
+        // 1. 미니맵 그리드 그리기
         const hexToPixel = (q, r) => {
             const size = 20; 
             const x = size * (Math.sqrt(3) * q + Math.sqrt(3)/2 * r);
@@ -209,7 +212,7 @@ class GameApp {
             }
         }
 
-        // 2. 아군 배치
+        // 2. 아군 배치 그리기
         party.forEach((pData, idx) => {
             const pos = hexToPixel(pData.q, pData.r);
             const unit = document.createElement('div');
@@ -226,40 +229,98 @@ class GameApp {
             mapWrapper.appendChild(unit);
         });
 
-        // 3. 적군 배치
+        // 3. 적군 배치 그리기 (★ 여기가 수정된 핵심 파트!)
         const stageData = STAGE_DATA[chapter][stage];
         const enemies = stageData.enemies || ['SLIME'];
         const weaknessCounts = {};
         const enemyListEl = document.getElementById('prep-enemy-list');
         enemyListEl.innerHTML = '';
 
-        enemies.forEach((eKey, enemyId) => {
-            const eData = CLASS_DATA[eKey];
+        // 맵 점유 확인용 Set (겹침 방지)
+        const occupied = new Set();
+        let autoEnemyIdx = 0; // 좌표 없는 적 배치용 카운터
+
+        enemies.forEach(rawEntry => {
+            // --- 파싱 로직 (battle.js와 동일하게 적용) ---
+            let entry = rawEntry;
+            let count = 1;
+            
+            // 수량 파싱 (*5)
+            if (entry.includes('*')) {
+                const parts = entry.split('*');
+                entry = parts[0];
+                count = parseInt(parts[1]) || 1;
+            }
+
+            // 좌표 파싱 (:14:6)
+            let key = entry;
+            let fixedQ = null;
+            let fixedR = null;
+
+            if (entry.includes(':')) {
+                const parts = entry.split(':');
+                key = parts[0];
+                if (parts[1]) fixedQ = Number(parts[1]);
+                if (parts[2]) fixedR = Number(parts[2]);
+            }
+
+            // 키 정제 (대문자, 공백/쉼표 제거)
+            key = key.trim().toUpperCase().replace(/,/g, '');
+            const eData = CLASS_DATA[key];
+
             if(eData) {
+                // 적군 정보 카드 (Enemy Intel) 추가 - 중복 방지 없이 다 보여주거나, Set으로 필터링 가능
+                // 여기서는 단순히 추가 (너무 많으면 스크롤됨)
                 const elInfo = ELEMENTS[eData.element];
-                weaknessCounts[elInfo.weak] = (weaknessCounts[elInfo.weak] || 0) + 1;
+                weaknessCounts[elInfo.weak] = (weaknessCounts[elInfo.weak] || 0) + count;
+                
+                // 정보 카드 (1개만 표시하고 수량 뱃지 붙이는 방식 권장하지만 일단 리스트업)
                 const card = document.createElement('div');
                 card.className = 'enemy-card-mini';
-                card.innerHTML = `<span style="font-size:20px;">${eData.icon}</span><div><div style="font-weight:bold;color:#f88;font-size:12px;">${eData.name}</div><div style="font-size:10px;color:#888;">약점: ${ELEMENTS[elInfo.weak].icon}</div></div>`;
+                card.innerHTML = `
+                    <span style="font-size:20px;">${eData.icon}</span>
+                    <div>
+                        <div style="font-weight:bold;color:#f88;font-size:12px;">${eData.name} ${count > 1 ? `x${count}` : ''}</div>
+                        <div style="font-size:10px;color:#888;">약점: ${ELEMENTS[elInfo.weak].icon}</div>
+                    </div>`;
                 enemyListEl.appendChild(card);
 
-                const ENEMY_BASE_COL = 14; 
-                const rowOffsets = [0, 1, -1, 2, -2, 3, -3, 4];
-                const row = 6 + rowOffsets[enemyId % 8];
-                const col = ENEMY_BASE_COL + Math.floor(enemyId / 8);
-                const q = col - (row - (row & 1)) / 2;
-                const r = row;
-                const pos = hexToPixel(q, r);
-                const unit = document.createElement('div');
-                unit.className = 'hex-unit enemy';
-                unit.textContent = eData.icon;
-                unit.style.left = pos.x + 'px';
-                unit.style.top = pos.y + 'px';
-                mapWrapper.appendChild(unit);
+                // 미니맵에 유닛 배치 (수량만큼 반복)
+                for(let i = 0; i < count; i++) {
+                    let q, r;
+
+                    if (fixedQ != null && fixedR != null) {
+                        q = fixedQ;
+                        r = fixedR;
+                    } else {
+                        // 자동 배치 로직
+                        const ENEMY_BASE_COL = 14; 
+                        const rowOffsets = [0, 1, -1, 2, -2, 3, -3, 4];
+                        const row = 6 + rowOffsets[autoEnemyIdx % 8];
+                        const col = ENEMY_BASE_COL + Math.floor(autoEnemyIdx / 8);
+                        q = col - (row - (row & 1)) / 2;
+                        r = row;
+                        autoEnemyIdx++;
+                    }
+
+                    // 겹침 방지 (아래로 밀기)
+                    while(occupied.has(`${q},${r}`)) { r++; }
+                    occupied.add(`${q},${r}`);
+
+                    // 핀(Unit) 그리기
+                    const pos = hexToPixel(q, r);
+                    const unit = document.createElement('div');
+                    unit.className = 'hex-unit enemy';
+                    unit.textContent = eData.icon;
+                    unit.style.left = pos.x + 'px';
+                    unit.style.top = pos.y + 'px';
+                    // 툴팁 등 추가 가능
+                    mapWrapper.appendChild(unit);
+                }
             }
         });
 
-        // 4. 좌측 리더 목록
+        // 4. 좌측 리더 목록 & 팁
         const deployedListEl = document.getElementById('prep-deployed-list');
         deployedListEl.innerHTML = '';
         party.forEach((pData, idx) => {
@@ -271,23 +332,19 @@ class GameApp {
             deployedListEl.appendChild(div);
         });
 
-        // 팁
+        // 추천 속성 팁
         const bestEle = Object.keys(weaknessCounts).sort((a,b) => weaknessCounts[b] - weaknessCounts[a])[0];
-        document.getElementById('prep-tip').innerHTML = bestEle ? `💡 추천: <b>${ELEMENTS[bestEle].name} ${ELEMENTS[bestEle].icon}</b>` : `💡 상성을 고려하세요.`;
+        document.getElementById('prep-tip').innerHTML = bestEle ? `💡 추천 속성: <b>${ELEMENTS[bestEle].name} ${ELEMENTS[bestEle].icon}</b>` : `💡 상성을 고려하여 배치하세요.`;
 
-        // --- 5. 하단 패널: 보유 영웅 (비활성화 + HP/MP 바 적용) ---
+        // 5. 하단 보유 영웅 목록
         const rosterEl = document.getElementById('prep-roster');
         rosterEl.innerHTML = '';
         GameState.heroes.forEach((h, originalIdx) => {
-            // [중복 방지 핵심] rosterIdx(인덱스)로 비교하여 정확성 확보
             const isDeployed = party.some(p => p.rosterIdx === originalIdx);
-            
-            // HP, MP 비율
             const hpPct = (h.curHp / h.hp) * 100;
             const mpPct = (h.curMp / h.mp) * 100;
 
             const card = document.createElement('div');
-            // deployed 클래스가 있으면 CSS(pointer-events: none)에 의해 클릭/드래그 차단됨
             card.className = `roster-card-h ${isDeployed ? 'deployed' : ''}`;
             
             card.innerHTML = `
@@ -305,32 +362,26 @@ class GameApp {
                 </div>
             `;
             
-            // 배치 안 된 영웅만 드래그/클릭 이벤트 연결
             if (!isDeployed) {
                 card.draggable = true;
                 card.ondragstart = (e) => {
-                    // 고유값인 rosterIdx를 전달
                     e.dataTransfer.setData("text/plain", JSON.stringify({ type: 'roster', hIdx: originalIdx }));
                 };
                 card.ondblclick = () => this.autoPlaceHero(h, originalIdx); 
             }
-            
             rosterEl.appendChild(card);
         });
     }
 
-    // [드롭 핸들러 수정: 중복 방지 강화]
     handlePrepDrop(e, q, r, targetUnitIdx = -1) {
         try {
             const data = JSON.parse(e.dataTransfer.getData("text/plain"));
             const party = this.prepState.party;
 
-            // 1. 로스터에서 드래그 (신규 배치)
             if (data.type === 'roster') {
                 const heroIdx = data.hIdx;
                 const hero = GameState.heroes[heroIdx];
 
-                // [중복 체크] ID로 비교
                 if (party.some(p => p.rosterIdx === heroIdx)) return; 
 
                 if (party.length >= 6) {
@@ -345,13 +396,11 @@ class GameApp {
                     party.push({ hero: hero, q: q, r: r, rosterIdx: heroIdx });
                 }
             } 
-            // 2. 맵 내 이동 (이동/스왑)
             else if (data.type === 'map') {
                 const fromIdx = data.idx;
                 const destIdx = party.findIndex(p => p.q === q && p.r === r);
                 
                 if (destIdx !== -1 && destIdx !== fromIdx) {
-                    // Swap
                     const tempQ = party[fromIdx].q;
                     const tempR = party[fromIdx].r;
                     party[fromIdx].q = q;
@@ -359,7 +408,6 @@ class GameApp {
                     party[destIdx].q = tempQ;
                     party[destIdx].r = tempR;
                 } else {
-                    // Move
                     party[fromIdx].q = q;
                     party[fromIdx].r = r;
                 }
@@ -385,7 +433,6 @@ class GameApp {
 
     autoPlaceHero(hero, originalIdx) {
         if (this.prepState.party.length >= 6) return;
-        // [중복 체크]
         if (this.prepState.party.some(p => p.rosterIdx === originalIdx)) return;
 
         const HERO_BASE_COL = 7;
@@ -413,7 +460,6 @@ class GameApp {
             if(eData) weakMap[ELEMENTS[eData.element].weak] = true;
         });
 
-        // 점수 매기기 (원래 인덱스 보존)
         const scoredHeroes = GameState.heroes.map((h, idx) => {
             let score = h.level * 10 + (h.str+h.int+h.def) * 0.5;
             if (weakMap[h.element]) score += 500; 
@@ -433,7 +479,6 @@ class GameApp {
             const col = HERO_BASE_COL + offset;
             const q = col - (row - (row & 1)) / 2;
             const r = row;
-            // rosterIdx 포함해서 저장
             this.prepState.party.push({ hero: c.hero, q: q, r: r, rosterIdx: c.rosterIdx });
         });
         
@@ -448,7 +493,6 @@ class GameApp {
             return;
         }
         
-        // 리더 재정렬: leaderIdx에 해당하는 영웅을 배열 0번으로 보냄
         const leaderIdx = this.prepState.leaderIdx;
         if (leaderIdx > 0 && leaderIdx < finalParty.length) {
             const leader = finalParty.splice(leaderIdx, 1)[0];
@@ -472,14 +516,13 @@ class GameApp {
             window.grid = new HexGrid(canvas);
             window.grid.prerenderGrid();
 
-            // customParty 전달 (오류 해결됨)
             window.battle = new BattleSystem(window.grid, this, chapter, stage, customParty);
             
         }, 50);
     }
 
     // ============================================================
-    // 기존 기능 유지
+    // 기본 기능 (상점, 여관, 리셋 등)
     // ============================================================
 
     resetGame() {
@@ -497,6 +540,16 @@ class GameApp {
         hero.curHp = hero.hp; hero.curMp = hero.mp;
         hero.xp = 0; hero.maxXp = 100; hero.statPoints = 0;
         hero.equipment = { weapon: null, armor: null, acc1: null, acc2: null, potion1: null, potion2: null };
+        
+        // [수정] 새로운 7스탯 시스템 초기화 (없으면 기본값 10)
+        hero.str = hero.str || 10;
+        hero.int = hero.int || 10;
+        hero.vit = hero.vit || 10;
+        hero.agi = hero.agi || 10;
+        hero.dex = hero.dex || 10;
+        hero.vol = hero.vol || 10; // 변동성
+        hero.luk = hero.luk || 10; // 운
+
         GameState.heroes.push(hero);
     }
 
@@ -626,6 +679,11 @@ class GameApp {
                 h.curHp = h.hp; h.curMp = h.mp;
                 h.xp = 0; h.maxXp = 100; h.statPoints = 0; 
                 h.equipment = { weapon: null, armor: null, acc1: null, acc2: null, potion1: null, potion2: null };
+                
+                // [수정] 7스탯 초기화
+                h.vol = h.vol || 10; 
+                h.luk = h.luk || 10;
+
                 GameState.recruitPool.push(h);
             });
         }
@@ -669,18 +727,21 @@ class GameApp {
         this.renderManageUI();
     }
 
+    // [수정] 7스탯 미리보기 공식 적용
     previewStatImpact(statKey) {
         this.clearStatPreview(); 
         const hero = GameState.heroes[this.selectedHeroIdx];
         if(!hero) return;
 
+        // 새로운 7스탯 시스템 공식에 따른 영향도 매핑
         const impactMap = {
-            'str': hero.atkType === 'PHYS' ? ['c-stat-atk'] : [],
-            'int': (hero.atkType === 'MAG' ? ['c-stat-atk'] : []).concat(['c-stat-res']),
-            'vit': ['c-stat-ten'],
-            'agi': ['c-stat-eva', 'c-stat-ten'],
-            'dex': ['c-stat-crit'],
-            'def': ['c-stat-def']
+            'str': ['c-stat-atk_phys', 'c-stat-def', 'c-stat-hp_max'], // 힘 -> 물리공격, 방어, 최대체력
+            'int': ['c-stat-atk_mag', 'c-stat-hit_mag', 'c-stat-mp_max', 'c-stat-mp_regen', 'c-stat-res', 'c-stat-spd'], // 지능 -> 마법공격, 마법명중, 마나, 마나재생, 마법저항, 속도
+            'vit': ['c-stat-def', 'c-stat-hp_max', 'c-stat-hp_regen', 'c-stat-tenacity', 'c-stat-res'], // 체력 -> 방어, 최대체력, 체력재생, 상태저항, 마법저항
+            'agi': ['c-stat-hit_phys', 'c-stat-eva', 'c-stat-spd', 'c-stat-mov', 'c-stat-tenacity'], // 민첩 -> 물리명중, 회피, 속도, 이동, 상태저항
+            'dex': ['c-stat-atk_phys', 'c-stat-atk_mag', 'c-stat-hit_phys', 'c-stat-hit_mag', 'c-stat-crit'], // 숙련 -> 공격력(물리/마법 최소뎀 관여), 명중(물리/마법), 크리
+            'vol': ['c-stat-atk_phys', 'c-stat-atk_mag'], // 변동성 -> 공격력(최대 데미지 관여)
+            'luk': ['c-stat-hit_phys', 'c-stat-hit_mag', 'c-stat-crit', 'c-stat-eva', 'c-stat-tenacity'] // 운 -> 명중, 크리, 회피, 상태저항
         };
 
         const targets = impactMap[statKey];
@@ -736,13 +797,28 @@ class GameApp {
             return { base, bonus };
         };
 
+        // [수정] 7스탯 기반 전투 수치 계산 로직 (관리창 표기용)
         const getCombatVal = (stat) => {
-            if(stat === 'atk') { const d = getStatDetail(hero.atkType==='MAG'?'int':'str'); return d.base + d.bonus; }
-            if(stat === 'def') { const d = getStatDetail('def'); return d.base + d.bonus; }
-            if(stat === 'res') return Math.floor((hero.int || 0) * 0.5);
-            if(stat === 'tenacity') return (hero.level || 1) + Math.floor((hero.vit || 0) * 0.5 + (hero.agi || 0) * 0.5);
-            if(stat === 'crit') return (Number(hero.dex || 0) * 0.5).toFixed(1) + '%';
-            if(stat === 'eva') return (Number(hero.agi || 0) * 0.5).toFixed(1) + '%';
+            const str = hero.str + (hero.atkType==='PHYS'?getStatDetail('str').bonus:0);
+            const int = hero.int + (hero.atkType==='MAG'?getStatDetail('int').bonus:0);
+            const vit = hero.vit;
+            const agi = hero.agi;
+            const dex = hero.dex;
+            const vol = hero.vol;
+            const luk = hero.luk;
+
+            if(stat === 'atk_phys') return Math.floor(str*1 + dex*0.5);
+            if(stat === 'atk_mag') return Math.floor(int*1.2 + dex*0.3);
+            if(stat === 'def') return Math.floor(vit*1 + str*0.3 + getStatDetail('def').bonus); // 방어구 포함
+            if(stat === 'res') return Math.floor(int*0.8 + vit*0.4);
+            if(stat === 'hit_phys') return Math.floor(dex*1.2 + agi*0.5 + luk*0.3);
+            if(stat === 'hit_mag') return Math.floor(int*0.6 + dex*0.4 + luk*0.2);
+            if(stat === 'crit') return (luk*1 + dex*0.5).toFixed(1) + '%';
+            if(stat === 'eva') return (agi*1 + luk*0.3).toFixed(1) + '%';
+            if(stat === 'tenacity') return Math.floor(vit*0.5 + luk*0.5);
+            if(stat === 'spd') return Math.floor(agi*1 + int*0.5);
+            if(stat === 'hp_max') return hero.hp; // 현재 MaxHP
+            if(stat === 'mp_max') return hero.mp;
             return '-';
         };
 
@@ -786,7 +862,7 @@ class GameApp {
                         <div class="stat-panel-container">
                             <div class="stat-panel" style="flex:1;">
                                 <div class="stat-sub-header">BASIC (PT: ${hero.statPoints})</div>
-                                ${['str', 'int', 'vit', 'agi', 'dex', 'def'].map(key => {
+                                ${['str', 'int', 'vit', 'agi', 'dex', 'vol', 'luk'].map(key => {
                                     const d = getStatDetail(key);
                                     return `
                                     <div class="stat-box" onmouseenter="game.previewStatImpact('${key}')" onmouseleave="game.clearStatPreview()">
@@ -806,12 +882,16 @@ class GameApp {
                             <div class="stat-panel" style="flex:1;">
                                 <div class="stat-sub-header">COMBAT</div>
                                 ${[
-                                    { id: 'atk', label: '공격력', key: 'atk' },
-                                    { id: 'def', label: '방어력', key: 'def' },
+                                    { id: 'atk_phys', label: '물리공격', key: 'atk_phys' },
+                                    { id: 'atk_mag', label: '마법공격', key: 'atk_mag' },
+                                    { id: 'def', label: '물리방어', key: 'def' },
                                     { id: 'res', label: '마법저항', key: 'res' },
-                                    { id: 'ten', label: '상태저항', key: 'tenacity' },
+                                    { id: 'hit_phys', label: '물리명중', key: 'hit_phys' },
+                                    { id: 'hit_mag', label: '마법명중', key: 'hit_mag' },
                                     { id: 'crit', label: '치명타', key: 'crit' },
-                                    { id: 'eva', label: '회피율', key: 'eva' }
+                                    { id: 'eva', label: '회피율', key: 'eva' },
+                                    { id: 'tenacity', label: '상태저항', key: 'tenacity' },
+                                    { id: 'spd', label: '행동속도', key: 'spd' }
                                 ].map(stat => `
                                     <div class="stat-box" id="c-stat-${stat.id}">
                                         <div class="stat-label-group" style="display:flex; align-items:center; gap:10px; flex:1;">
