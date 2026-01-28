@@ -20,7 +20,10 @@ export class BattleSystem {
         this.viewingUnit = null; 
         this.selectedSkill = null;
         this.confirmingSkill = null;
+        
+        // [변경] 행동 상태 관리: moved(이동여부), attacked(일반공격여부), skilled(스킬여부)
         this.actions = { moved: false, attacked: false, skilled: false };
+        
         this.reachableHexes = []; 
         this.attackableHexes = []; 
         this.skillHexes = [];        
@@ -90,59 +93,54 @@ export class BattleSystem {
         };
     }
 
-    // [수정] initUnits 메서드 (커스텀 파티 배치 로직 적용)
+    // [battle.js] initUnits 함수 (최종 수정본)
     initUnits(chapter, stage) {
         let idCounter = 1;
         const occupied = new Set();
 
-        // 1. 아군 데이터 준비
         let myTeamData = [];
         let isCustom = false;
 
+        // 1. 아군 데이터 준비
         if (this.customParty && this.customParty.length > 0) {
-            myTeamData = this.customParty; // [{hero, q, r, rosterIdx}, ...]
+            myTeamData = this.customParty;
             isCustom = true;
         } else {
-            // 기본값 (테스트용)
             const allHeroes = this.gameApp.gameState.heroes;
             const basics = allHeroes.length > 0 ? allHeroes.slice(0, 6) : [CLASS_DATA['KNIGHT']];
             myTeamData = basics.map(h => ({ hero: h, q: null, r: null }));
         }
 
-        // 배치 상수
         const HERO_BASE_COL = 7;
         const ENEMY_BASE_COL = 14;
+        
         const ROLE_PRIORITY = {
-            'KNIGHT': 2, 'BARBARIAN': 2, 'PALADIN': 2, 'GOLEM': 2, 'ORC': 2, 
-            'ROGUE': 1, 'SLIME': 1, 'GOBLIN': 1, 'SKELETON': 1, 
-            'ARCHER': 0, 'MAGE': -1, 'CLERIC': -1, 'WARLOCK': -1, 'LICH': -1 
+            'KNIGHT': 2, 'BARBARIAN': 2, 'PALADIN': 2, 'GOLEM': 2, 'ORC': 2, 'BEHEMOTH': 2, 'TREANT': 2,
+            'ROGUE': 1, 'SLIME': 1, 'GOBLIN': 1, 'SKELETON': 1, 'RAT': 1, 'WOLF': 1, 'BOAR': 1,
+            'ARCHER': 0, 'MAGE': -1, 'CLERIC': -1, 'WARLOCK': -1, 'LICH': -1, 'DRAKE': -1, 'DRAGON': -1
         };
 
-        const spawn = (entry, team) => {
-            let data, specificQ, specificR;
-            
-            // 데이터 포맷 정규화
-            if (team === 0 && isCustom) {
-                data = entry.hero;
-                specificQ = entry.q;
-                specificR = entry.r;
-            } else if (team === 0) {
-                data = entry.hero;
+        const spawn = (entryData, team, fixedQ = null, fixedR = null) => {
+            let data;
+            if (team === 0) {
+                if (isCustom) {
+                    data = entryData.hero;
+                    if (fixedQ === null) fixedQ = entryData.q;
+                    if (fixedR === null) fixedR = entryData.r;
+                } else {
+                    data = entryData.hero;
+                }
             } else {
-                data = entry; // 적군은 클래스 데이터
+                data = entryData; 
             }
 
             let q, r;
-
-            // 좌표 결정
-            if (team === 0 && specificQ != null && specificR != null) {
-                q = specificQ;
-                r = specificR;
+            if (fixedQ != null && fixedR != null) {
+                q = Number(fixedQ);
+                r = Number(fixedR);
             } else {
-                // 자동 배치 로직
                 let col, row;
                 const roleOffset = ROLE_PRIORITY[data.classKey] || 0;
-
                 if (team === 0) {
                     col = HERO_BASE_COL + roleOffset; 
                     const rowOffsets = [0, 1, -1, 2, -2, 3]; 
@@ -158,7 +156,6 @@ export class BattleSystem {
                 r = row;
             }
 
-            // 겹침 방지
             while(occupied.has(`${q},${r}`)) { r++; }
             occupied.add(`${q},${r}`);
 
@@ -167,8 +164,8 @@ export class BattleSystem {
                 unit = data; 
                 unit.q = q; unit.r = r; 
                 unit.buffs = []; unit.cooldowns = {};
-                
-                // [신규] 리더 버프 적용 (customParty의 0번 인덱스가 리더)
+                unit.vol = unit.vol || 10; unit.luk = unit.luk || 10;
+
                 if (isCustom && data === this.customParty[0].hero) {
                     unit.isLeader = true;
                     unit.buffs.push({ type: 'ATK_UP', name: 'LEADER', icon: '👑', duration: 999, mult: 1.05, desc: '리더 보너스' });
@@ -178,13 +175,13 @@ export class BattleSystem {
                 if (isCustom && this.customParty[0]) {
                      unit.buffs.push({ type: 'DEF_UP', name: 'AURA', icon: '🛡️', duration: 999, mult: 1.05, desc: '리더의 가호' });
                 }
-
             } else {
                 unit = JSON.parse(JSON.stringify(data));
                 unit.q = q; unit.r = r;
                 unit.curHp = unit.hp; unit.curMp = unit.mp;
                 unit.buffs = []; unit.cooldowns = {};
                 unit.equipment = { weapon: null, armor: null, acc1: null, acc2: null, potion1: null, potion2: null };
+                unit.vol = unit.vol || 10; unit.luk = unit.luk || 10;
             }
 
             unit.id = idCounter++;
@@ -193,7 +190,7 @@ export class BattleSystem {
             unit.stageActionXp = 0;
             unit.hasShownMaxXpMsg = false;
             
-            const spd = this.getStat(unit, 'spd');
+            const spd = this.getDerivedStat(unit, 'spd');
             unit.actionGauge = Math.min(200, spd * 10); 
             
             if (team === 1 && chapter > 1) {
@@ -205,20 +202,52 @@ export class BattleSystem {
             this.units.push(unit);
         };
 
-        // 아군 소환
+        // 3. 아군 소환
         myTeamData.forEach(d => spawn(d, 0));
 
-        // 적군 소환
+        // 4. 적군 소환 (파싱 로직 강화됨)
         const stageInfo = STAGE_DATA[chapter] && STAGE_DATA[chapter][stage];
         if (stageInfo && stageInfo.enemies) {
-            stageInfo.enemies.forEach(enemyKey => {
-                if (CLASS_DATA[enemyKey]) spawn(CLASS_DATA[enemyKey], 1);
+            stageInfo.enemies.forEach(rawEntry => {
+                let entry = rawEntry;
+                let count = 1;
+                
+                // 1. 수량 파싱 (* 기호)
+                if (entry.includes('*')) {
+                    const parts = entry.split('*');
+                    entry = parts[0]; 
+                    count = parseInt(parts[1]) || 1; 
+                }
+
+                // 2. 좌표 파싱 (: 기호)
+                let key = entry;
+                let q = null;
+                let r = null;
+
+                if (entry.includes(':')) {
+                    const parts = entry.split(':');
+                    key = parts[0];        
+                    if (parts[1]) q = Number(parts[1]);
+                    if (parts[2]) r = Number(parts[2]);
+                }
+
+                // [★핵심 수정★] 문자열 정제 (소문자->대문자, 쉼표/공백 제거)
+                // 이 줄이 없으면 "SLIME," 나 "rat"을 인식하지 못합니다.
+                key = key.trim().toUpperCase().replace(/,/g, '');
+
+                // 3. 수량만큼 반복 소환
+                if (CLASS_DATA[key]) {
+                    for(let i=0; i<count; i++) {
+                        spawn(CLASS_DATA[key], 1, q, r);
+                    }
+                } else {
+                    // 데이터가 없을 때 콘솔에 경고 표시 (F12 눌러서 확인 가능)
+                    console.warn(`[Monster Error] Key: "${key}" not found. Original: "${rawEntry}"`);
+                }
             });
         } else {
-            const enemyCount = 1 + Math.floor(stage / 2);
-            for(let i=0; i<enemyCount; i++) {
-                spawn(CLASS_DATA['SLIME'], 1);
-            }
+            // 데이터 없을 시 기본 슬라임
+            spawn(CLASS_DATA['SLIME'], 1);
         }
     }
 
@@ -280,6 +309,11 @@ export class BattleSystem {
         this.regenResources(this.currentUnit);
         this.viewingUnit = this.currentUnit;
 
+        // [핵심] 턴 시작시 행동 플래그 초기화
+        this.actions = { moved: false, attacked: false, skilled: false };
+        this.selectedSkill = null;
+        this.confirmingSkill = null;
+
         let skipTurn = false;
         
         for (let i = this.currentUnit.buffs.length - 1; i >= 0; i--) {
@@ -322,10 +356,6 @@ export class BattleSystem {
 
         if (skipTurn) { this.updateStatusPanel(); this.renderPartyList(); setTimeout(() => this.endTurn(), 800); return; }
 
-        this.actions = { moved: false, attacked: false, skilled: false };
-        this.selectedSkill = null;
-        this.confirmingSkill = null;
-
         if (!this.hasStatus(this.currentUnit, 'SHOCK')) {
             for (let skId in this.currentUnit.cooldowns) {
                 if (this.currentUnit.cooldowns[skId] > 0) this.currentUnit.cooldowns[skId]--;
@@ -359,6 +389,7 @@ export class BattleSystem {
 
     endTurn() { 
         this.isProcessingTurn = true; 
+        this.actions = { moved: true, attacked: true, skilled: true }; // 턴 종료시 모든 액션 차단
         setTimeout(() => this.nextTurn(), 100);
     }
 
@@ -445,19 +476,32 @@ export class BattleSystem {
     }
 
     getDerivedStat(unit, type, excludeBuffs = false) {
-        if (type === 'atk_phys') return this.getStat(unit, 'str', excludeBuffs);
-        if (type === 'atk_mag') return this.getStat(unit, 'int', excludeBuffs);
-        if (type === 'def') return this.getStat(unit, 'def', excludeBuffs);
-        if (type === 'res') return this.getStat(unit, 'res', excludeBuffs);
-        if (type === 'crit') return this.getStat(unit, 'crit', excludeBuffs);
-        if (type === 'eva') return this.getStat(unit, 'eva', excludeBuffs);
-        if (type === 'spd') return this.getStat(unit, 'spd', excludeBuffs);
-        if (type === 'hp_max') return unit.hp; 
-        if (type === 'mp_max') return unit.mp;
-        if (type === 'hp_regen') return Math.max(1, Math.floor(this.getStat(unit, 'vit', excludeBuffs) * 0.5));
-        if (type === 'mp_regen') return Math.max(1, Math.floor(this.getStat(unit, 'int', excludeBuffs) * 0.5));
-        if (type === 'mov') return this.getStat(unit, 'mov', excludeBuffs);
-        if (type === 'rng') return this.getStat(unit, 'rng', excludeBuffs);
+        const str = this.getStat(unit, 'str', excludeBuffs);
+        const int = this.getStat(unit, 'int', excludeBuffs);
+        const vit = this.getStat(unit, 'vit', excludeBuffs);
+        const agi = this.getStat(unit, 'agi', excludeBuffs);
+        const dex = this.getStat(unit, 'dex', excludeBuffs);
+        const vol = this.getStat(unit, 'vol', excludeBuffs);
+        const luk = this.getStat(unit, 'luk', excludeBuffs);
+
+        switch (type) {
+            case 'atk_phys': return (str * 1) + (dex * 0.5);
+            case 'atk_mag':  return (int * 1.2) + (dex * 0.3);
+            case 'hit_phys': return (dex * 1.2) + (agi * 0.5) + (luk * 0.3);
+            case 'hit_mag':  return (int * 0.6) + (dex * 0.4) + (luk * 0.2);
+            case 'crit':     return (luk * 1) + (dex * 0.5);
+            case 'def':      return (vit * 1) + (str * 0.3);
+            case 'res':      return (int * 0.8) + (vit * 0.4);
+            case 'eva':      return (agi * 1) + (luk * 0.3);
+            case 'tenacity': return (vit * 0.5) + (luk * 0.5);
+            case 'hp_max':   return (unit.baseHp || 0) + (vit * 10) + (str * 2);
+            case 'mp_max':   return (unit.baseMp || 0) + (int * 5);
+            case 'hp_regen': return Math.max(1, vit * 0.5);
+            case 'mp_regen': return Math.max(1, int * 1);
+            case 'spd':      return (agi * 1) + (int * 0.5);
+            case 'mov':      return (unit.baseMov || 3) + Math.floor(agi * 0.1);
+            case 'rng':      return this.getStat(unit, 'rng', excludeBuffs);
+        }
         return 0;
     }
 
@@ -648,15 +692,52 @@ export class BattleSystem {
         setTimeout(() => this.endTurn(), 500);
     }
 
-    calculateDamage(atk, def, mult, type) {
-        if (!type) type = atk.atkType;
-        let val = this.getStat(atk, type==='MAG'?'int':'str');
-        let defense = type === 'MAG' ? this.getStat(def, 'res') : this.getStat(def, 'def');
+    calculateDamage(atkUnit, defUnit, skillMult, dmgType) {
+        if (!dmgType) dmgType = atkUnit.atkType; // 기본 타입 방어
+
+        // 1. 기초 스탯 로드
+        const dex = this.getStat(atkUnit, 'dex');
+        const vol = this.getStat(atkUnit, 'vol');
+        
+        // 2. 공격력 및 범위 계산 (기획된 계수 적용)
+        let baseAtk, minMult, maxMult;
+
+        if (dmgType === 'MAG') {
+            baseAtk = this.getDerivedStat(atkUnit, 'atk_mag');
+            minMult = 0.4 + (dex * 0.004); 
+            maxMult = 1.0 + (vol * 0.0125);
+        } else {
+            baseAtk = this.getDerivedStat(atkUnit, 'atk_phys');
+            minMult = 0.5 + (dex * 0.005);
+            maxMult = 1.0 + (vol * 0.01);
+        }
+
+        let minDmg = baseAtk * minMult;
+        let maxDmg = baseAtk * maxMult;
+        if (minDmg > maxDmg) minDmg = maxDmg * 0.95; 
+
+        // 3. 랜덤 데미지 산출
+        let rawDmg = Math.random() * (maxDmg - minDmg) + minDmg;
+
+        // 4. 방어력 적용
+        const defense = dmgType === 'MAG' ? this.getDerivedStat(defUnit, 'res') : this.getDerivedStat(defUnit, 'def');
+        
+        // 5. 상성 및 배율 적용
         let eleMult = 1.0;
-        const atkEle = ELEMENTS[atk.element || 'NONE'];
-        if (atkEle.strong === def.element) eleMult = 1.3;
-        else if (atkEle.weak === def.element) eleMult = 0.8;
-        return Math.max(1, Math.floor(val * mult * eleMult * (100 / (100 + defense))));
+        const atkEle = ELEMENTS[atkUnit.element || 'NONE'];
+        if (atkEle.strong === defUnit.element) eleMult = 1.3;
+        else if (atkEle.weak === defUnit.element) eleMult = 0.8;
+
+        let finalDmg = (rawDmg * skillMult * eleMult) * (100 / (100 + defense));
+
+        // 6. 치명타 (운 + 숙련도 기반 확률)
+        const critRate = this.getDerivedStat(atkUnit, 'crit');
+        if (Math.random() * 100 < critRate) {
+            finalDmg *= 1.5;
+            this.showFloatingText(defUnit, "CRIT!", "#ff0000");
+        }
+
+        return Math.max(1, Math.floor(finalDmg));
     }
 
     async runAllyAutoAI() {
@@ -949,8 +1030,9 @@ export class BattleSystem {
             }
         } 
         else if (u && u.team === 1) {
-            if (this.actions.attacked) {
-                this.log("이미 공격했습니다.", "log-system");
+            // [규칙 적용] 이미 공격/스킬 사용했으면 공격 불가
+            if (this.actions.attacked || this.actions.skilled) {
+                this.log("이미 이번 턴에 행동했습니다.", "log-system");
                 return;
             }
             const dist = this.grid.getDistance(this.currentUnit, u);
@@ -1009,7 +1091,7 @@ export class BattleSystem {
             await new Promise(resolve => setTimeout(resolve, 150));
         }
         this.isAnimating = false;
-        this.actions.moved = true;
+        this.actions.moved = true; // [이동 완료 플래그]
         this.calcReachable();
         this.updateStatusPanel();
         if(cb) cb();
@@ -1138,6 +1220,7 @@ export class BattleSystem {
         }
     }
 
+    // [battle.js] tryExecuteSkill 함수
     tryExecuteSkill(targetHex, targetUnit) {
         const skill = this.selectedSkill;
         if (!skill) return;
@@ -1147,18 +1230,37 @@ export class BattleSystem {
             return;
         }
 
+        // 1. 타겟 자동 보정 (버튼 시전 시)
         let effectiveTarget = targetHex;
-        if (!effectiveTarget && ['SELF', 'ALLY_ALL', 'ENEMY_ALL'].includes(skill.main.target)) effectiveTarget = this.currentUnit;
-        if (!effectiveTarget && skill.main.target.includes('ENEMY') && targetUnit) effectiveTarget = targetUnit;
+        
+        if (!effectiveTarget) {
+            // 자신, 아군전체, 적전체(99), 사거리0 인 경우 -> 시전자를 기준점으로 설정
+            if (['SELF', 'ALLY_ALL'].includes(skill.main.target) || 
+               (skill.main.target === 'AREA_ENEMY' && (skill.main.area||0) >= 99) ||
+               skill.rng === 0) {
+                effectiveTarget = this.currentUnit;
+            }
+        }
 
-        if (skill.main.type !== 'RESURRECT' && (skill.main.target.includes('ENEMY') || skill.main.target === 'ALLY_SINGLE')) {
-             const dist = this.grid.getDistance(this.currentUnit, effectiveTarget || this.currentUnit);
+        // 2. 사거리 및 유효성 체크
+        const isGlobalSkill = ['SELF', 'ALLY_ALL'].includes(skill.main.target) || 
+                              (skill.main.target === 'AREA_ENEMY' && (skill.main.area||0) >= 99);
+
+        // 타겟팅 스킬인데 타겟이 없으면 취소
+        if (!isGlobalSkill && skill.main.type !== 'RESURRECT' && !effectiveTarget) {
+             return; 
+        }
+
+        // 사거리 체크 (Global 스킬은 제외)
+        if (!isGlobalSkill && skill.main.type !== 'RESURRECT' && effectiveTarget) {
+             const dist = this.grid.getDistance(this.currentUnit, effectiveTarget);
              if (dist > skill.rng) { this.log("사거리 밖입니다.", "log-system"); return; }
         }
 
+        // 3. 실행
         this.currentUnit.curMp -= skill.mp;
         this.currentUnit.cooldowns[skill.id] = skill.cool;
-        this.actions.skilled = true;
+        this.actions.skilled = true; // 행동 완료 처리
         
         if (this.currentUnit.team === 0) {
             this.gainActionXp(this.currentUnit, 10);
@@ -1202,7 +1304,6 @@ export class BattleSystem {
             this.gainKillXp(xpReward);
         }
 
-        // [수정] 중복 보상 지급 방지 로직 적용
         const enemies = this.units.filter(u => u.team === 1 && u.curHp > 0).length;
         const allies = this.units.filter(u => u.team === 0 && u.curHp > 0).length;
 
@@ -1327,12 +1428,14 @@ export class BattleSystem {
         this.updateCursor();
     }
 
+    // [battle.js] updateStatusPanel 함수 교체
     updateStatusPanel() {
         const p = document.getElementById('bottom-panel');
         if(!this.viewingUnit) { p.innerHTML = '<div style="margin:auto;color:#666">유닛을 선택하세요</div>'; return; }
         
         const u = this.viewingUnit;
         
+        // 스탯 행 생성 헬퍼
         const createRow = (key, label, val, isBase, idPrefix='val') => {
             let btnHtml = '';
             if (isBase && u.team === 0 && u.statPoints > 0) {
@@ -1350,8 +1453,8 @@ export class BattleSystem {
             
             if (!isBase) {
                 const currentVal = parseFloat(val);
-                const baseVal = this.getDerivedStat(u, key === 'atk' ? (u.atkType==='MAG'?'atk_mag':'atk_phys') : key, true);
-                if (key !== 'mov' && key !== 'rng') {
+                const baseVal = this.getDerivedStat(u, key, true);
+                if (!['mov', 'rng', 'hp_max', 'mp_max'].includes(key)) {
                     if (currentVal > baseVal) valClass = 'val-buff';
                     else if (currentVal < baseVal) valClass = 'val-debuff';
                 }
@@ -1367,20 +1470,20 @@ export class BattleSystem {
             </div>`;
         };
 
-        const atk = u.atkType === 'MAG' ? this.getStat(u, 'int') : this.getStat(u, 'str');
-        const atkLabel = u.atkType === 'MAG' ? '공격력(마법)' : '공격력(물리)';
-        const def = this.getStat(u, 'def');
         const statusListHtml = u.buffs.length > 0 
             ? u.buffs.map(b => `<div class="status-text-item">${b.icon} <b>${b.name}</b>: ${EFFECTS[b.type]?.desc}</div>`).join('') 
             : `<div class="status-text-item" style="color:#666;text-align:center;">상태이상 없음</div>`;
 
-      p.innerHTML = `
+        // [수정됨] 행동 인디케이터 로직 (공격이나 스킬을 썼으면 '행동' 완료 처리)
+        const isActionDone = this.actions.attacked || this.actions.skilled;
+
+       p.innerHTML = `
             <div class="bp-col col-profile">
                 <div class="action-flags">
-                    <div class="flag-pill ${this.actions.moved?'done':'available'}">이동</div>
-                    <div class="flag-pill ${this.actions.attacked?'done':'available'}">공격</div>
-                    <div class="flag-pill ${this.actions.skilled?'done':'available'}">스킬</div>
+                    <div class="flag-pill ${this.actions.moved ? 'done' : 'available'}">이동</div>
+                    <div class="flag-pill ${isActionDone ? 'done' : 'available'}">행동</div>
                 </div>
+
                 <div class="portrait-lg">${u.icon}</div>
                 <div class="basic-name">${u.name}</div>
                 <div class="basic-lv">Lv.${u.level} ${u.team===0?'(Hero)':'(Enemy)'}</div>
@@ -1392,29 +1495,29 @@ export class BattleSystem {
             </div>
 
             <div class="bp-col col-base">
-                <div class="bp-header">기초</div>
-                ${createRow('str', '힘', u.str, true, 'val-base')}
-                ${createRow('int', '지능', u.int, true, 'val-base')}
-                ${createRow('vit', '체력', u.vit, true, 'val-base')}
-                ${createRow('agi', '민첩', u.agi, true, 'val-base')}
-                ${createRow('dex', '손재주', u.dex, true, 'val-base')}
-                ${createRow('def', '방어', u.def, true, 'val-base')}
+                <div class="bp-header">기초 (7스탯)</div>
+                ${createRow('str', '힘 (STR)', this.getStat(u, 'str'), true, 'val-base')}
+                ${createRow('int', '지능 (INT)', this.getStat(u, 'int'), true, 'val-base')}
+                ${createRow('vit', '체력 (VIT)', this.getStat(u, 'vit'), true, 'val-base')}
+                ${createRow('agi', '민첩 (AGI)', this.getStat(u, 'agi'), true, 'val-base')}
+                ${createRow('dex', '숙련 (DEX)', this.getStat(u, 'dex'), true, 'val-base')}
+                ${createRow('vol', '변동 (VOL)', this.getStat(u, 'vol'), true, 'val-base')}
+                ${createRow('luk', '운 (LUK)', this.getStat(u, 'luk'), true, 'val-base')}
                 ${u.statPoints > 0 ? `<div style="text-align:center;color:gold;font-size:11px;margin-top:5px;">PT: ${u.statPoints}</div>` : ''}
             </div>
 
             <div class="bp-col col-combat">
-                <div class="bp-header">전투</div>
-                ${createRow('atk', atkLabel, atk, false)}
-                ${createRow('def', '물리방어', def, false)}
-                ${createRow('res', '마법저항', this.getStat(u,'res'), false)}
-                ${createRow('hp_max', '최대체력', u.hp, false)}
-                ${createRow('hpr', '체력재생', this.getDerivedStat(u,'hp_regen'), false)}
-                ${createRow('mp_max', '최대마나', u.mp, false)}
-                ${createRow('mpr', '마나재생', this.getDerivedStat(u,'mp_regen'), false)}
-                ${createRow('crit', '치명타율', this.getStat(u,'crit'), false)}
-                ${createRow('eva', '회피율', this.getStat(u,'eva'), false)}
-                ${createRow('ten', '상태저항', this.getStat(u,'tenacity'), false)}
-                ${createRow('spd', '속도', this.getStat(u,'spd'), false)}
+                <div class="bp-header">전투 능력</div>
+                ${createRow('atk_phys', '물리공격', this.getDerivedStat(u,'atk_phys'), false)}
+                ${createRow('atk_mag', '마법공격', this.getDerivedStat(u,'atk_mag'), false)}
+                ${createRow('def', '물리방어', this.getDerivedStat(u,'def'), false)}
+                ${createRow('res', '마법저항', this.getDerivedStat(u,'res'), false)}
+                ${createRow('hit_phys', '물리명중', this.getDerivedStat(u,'hit_phys'), false)}
+                ${createRow('hit_mag', '마법명중', this.getDerivedStat(u,'hit_mag'), false)}
+                ${createRow('crit', '치명타율', this.getDerivedStat(u,'crit'), false)}
+                ${createRow('eva', '회피율', this.getDerivedStat(u,'eva'), false)}
+                ${createRow('tenacity', '상태저항', this.getDerivedStat(u,'tenacity'), false)}
+                ${createRow('spd', '행동속도', this.getDerivedStat(u,'spd'), false)}
             </div>
 
             <div class="bp-col col-control" id="control-panel-grid"></div>
@@ -1424,6 +1527,7 @@ export class BattleSystem {
                 <div class="status-list">${statusListHtml}</div>
             </div>
         `;
+        
         if (this.currentUnit.team === 0 && !this.isProcessingTurn) {
             this.renderUI();
         }
@@ -1514,6 +1618,7 @@ export class BattleSystem {
         };
     }
 
+
     renderUI() {
         const box = document.getElementById('control-panel-grid');
         if(!box || this.currentUnit.team !== 0) return;
@@ -1527,42 +1632,63 @@ export class BattleSystem {
             const cd = this.currentUnit.cooldowns[s.id] || 0;
             const manaLack = this.currentUnit.curMp < s.mp;
             
-            btn.className = `skill-btn ${this.selectedSkill===s?'active':''} ${cd>0?'disabled':''} ${manaLack?'mana-lack':''}`;
+            // 타겟팅 불필요 스킬 판단 (자신, 아군전체, 적전체99, 사거리0)
+            const isNonTargetSkill = 
+                ['SELF', 'ALLY_ALL'].includes(s.main.target) || 
+                (s.main.target === 'AREA_ENEMY' && (s.main.area||0) >= 99) ||
+                s.rng === 0;
+
+            btn.className = `skill-btn ${this.selectedSkill?.id === s.id ? 'active' : ''} ${cd>0?'disabled':''} ${manaLack?'mana-lack':''}`;
             btn.innerHTML = `<div class="skill-icon">${s.icon}</div><div class="skill-name">${s.name}</div>`;
             
             if(cd > 0) btn.innerHTML += `<div class="cooldown-overlay">${Math.ceil(cd)}</div>`;
             
-            if (this.confirmingSkill === s) {
+            // [수정됨] 객체 참조 대신 ID로 비교하여 정확도 향상
+            const isConfirming = this.confirmingSkill && this.confirmingSkill.id === s.id;
+
+            if (isConfirming) {
+                // [확인 모드]
                 btn.innerHTML = `
                     <div class="confirm-overlay">
                         <div class="confirm-btn">시전</div>
                         <div class="cancel-btn">취소</div>
                     </div>`;
+                
+                // 시전 버튼
                 btn.querySelector('.confirm-btn').onclick = (e) => {
                     e.stopPropagation();
                     this.selectedSkill = s; 
-                    this.tryExecuteSkill(null, null); 
+                    this.tryExecuteSkill(null, null); // 타겟 없이 실행
                     this.confirmingSkill = null;
                 };
+                
+                // 취소 버튼
                 btn.querySelector('.cancel-btn').onclick = (e) => {
                     e.stopPropagation();
                     this.confirmingSkill = null;
                     this.updateStatusPanel();
                 };
             } else {
+                // [일반 모드]
                 btn.onclick = () => {
-                    if(cd > 0 || this.actions.skilled || this.isProcessingTurn) return;
+                    // 제약 사항 체크
+                    if(cd > 0 || this.actions.skilled || this.actions.attacked || this.isProcessingTurn) {
+                        return;
+                    }
                     if(manaLack) { this.log("마나가 부족합니다.", "log-system"); return; }
                     
-                    if (['SELF', 'ALLY_ALL'].includes(s.main.target) || 
-                       (s.main.target === 'AREA_ENEMY' && (s.main.area||0) >= 99) || 
-                       s.rng === 0) {
-                        
-                        if (this.confirmingSkill === s) this.confirmingSkill = null;
-                        else this.confirmingSkill = s;
-                        this.updateStatusPanel();
+                    if (isNonTargetSkill) {
+                        // 타겟팅 불필요 -> 토글 방식으로 확인창 띄우기
+                        if (this.confirmingSkill && this.confirmingSkill.id === s.id) {
+                            this.confirmingSkill = null;
+                        } else {
+                            this.confirmingSkill = s;
+                        }
+                        this.selectedSkill = null; 
+                        this.updateStatusPanel(); // UI 갱신
                     } else {
-                        this.selectedSkill = (this.selectedSkill === s) ? null : s;
+                        // 일반 타겟팅 모드
+                        this.selectedSkill = (this.selectedSkill && this.selectedSkill.id === s.id) ? null : s;
                         this.confirmingSkill = null;
                         this.updateCursor();
                         this.updateStatusPanel(); 
@@ -1570,6 +1696,7 @@ export class BattleSystem {
                 };
             }
 
+            // 툴팁
             btn.onmouseenter = (e) => {
                 const info = `<div style="font-weight:bold;color:gold">${s.name}</div>
                 <div>${s.desc}</div><hr style="margin:2px 0">
@@ -1587,7 +1714,243 @@ export class BattleSystem {
         turnBtn.onclick = () => { if(!this.isProcessingTurn) this.endTurn(); };
         box.appendChild(turnBtn);
     }
-    
+    // [누락된 함수 1] 하단 스탯 패널 갱신
+    // [battle.js] updateStatusPanel 함수 (이동/행동 2버튼 통합 버전)
+    updateStatusPanel() {
+        const p = document.getElementById('bottom-panel');
+        if(!this.viewingUnit) { p.innerHTML = '<div style="margin:auto;color:#666">유닛을 선택하세요</div>'; return; }
+        
+        const u = this.viewingUnit;
+        
+        // 스탯 행 생성 헬퍼 함수
+        const createRow = (key, label, val, isBase, idPrefix='val') => {
+            let btnHtml = '';
+            // 아군이고 스탯 포인트가 있을 때 + 버튼 표시
+            if (isBase && u.team === 0 && u.statPoints > 0) {
+                const cost = this.getStatCost(u, key);
+                const disabled = u.statPoints < cost ? 'disabled' : '';
+                btnHtml = `<button class="stat-up-btn ${disabled}" 
+                    ${disabled ? '' : `onclick="window.battle.allocateStat('${key}')"`}
+                    onmouseenter="window.battle.handleStatHover(event, '${key}', true)"
+                    onmouseleave="window.battle.hideTooltip()">+</button>`;
+            }
+
+            let valClass = 'val-normal';
+            let displayVal = val;
+            if (key === 'crit' || key === 'eva') displayVal = parseFloat(val).toFixed(1) + '%';
+            
+            // 버프/디버프 상태에 따른 색상 처리
+            if (!isBase) {
+                const currentVal = parseFloat(val);
+                // 기본값(버프제외) 계산
+                const baseVal = this.getDerivedStat(u, key, true);
+                if (!['mov', 'rng', 'hp_max', 'mp_max'].includes(key)) {
+                    if (currentVal > baseVal) valClass = 'val-buff';
+                    else if (currentVal < baseVal) valClass = 'val-debuff';
+                }
+            }
+            const previewSpan = `<span id="prev-${idPrefix==='val'?'':idPrefix+'-'}${key}" class="stat-arrow"></span>`;
+            return `<div class="stat-row">
+                <span class="stat-label">${label}</span>
+                <div class="stat-val-box">
+                    <span id="${idPrefix}-${key}" class="stat-val ${valClass}">${displayVal}</span>
+                    ${previewSpan}
+                    ${btnHtml}
+                </div>
+            </div>`;
+        };
+
+        // 상태이상 텍스트 생성
+        const statusListHtml = u.buffs.length > 0 
+            ? u.buffs.map(b => `<div class="status-text-item">${b.icon} <b>${b.name}</b>: ${EFFECTS[b.type]?.desc}</div>`).join('') 
+            : `<div class="status-text-item" style="color:#666;text-align:center;">상태이상 없음</div>`;
+
+        // [★핵심 수정★] 행동 통합 로직
+        // 공격(attacked)이나 스킬(skilled) 중 하나라도 했으면 '행동'이 끝난 것으로 처리
+        const isActionDone = this.actions.attacked || this.actions.skilled;
+
+       p.innerHTML = `
+            <div class="bp-col col-profile">
+                <div class="action-flags">
+                    <div class="flag-pill ${this.actions.moved ? 'done' : 'available'}">이동</div>
+                    <div class="flag-pill ${isActionDone ? 'done' : 'available'}">행동</div>
+                </div>
+
+                <div class="portrait-lg">${u.icon}</div>
+                <div class="basic-name">${u.name}</div>
+                <div class="basic-lv">Lv.${u.level} ${u.team===0?'(Hero)':'(Enemy)'}</div>
+                <div style="font-size:11px; width:100%; margin-top:5px;">
+                    HP <div class="bar-container" style="height:15px;"><div class="bar-fill hp-fill" style="width:${(u.curHp/u.hp)*100}%"></div><div class="bar-text">${Math.floor(u.curHp)}/${u.hp}</div></div>
+                    MP <div class="bar-container" style="height:10px;"><div class="bar-fill mp-fill" style="width:${(u.curMp/u.mp)*100}%"></div><div class="bar-text" style="font-size:9px;">${Math.floor(u.curMp)}/${u.mp}</div></div>
+                    <div style="height:4px; margin-top:2px; background:#222;"><div style="height:100%; width:${(u.xp/u.maxXp)*100}%; background:#ccc;"></div></div>
+                </div>
+            </div>
+
+            <div class="bp-col col-base">
+                <div class="bp-header">기초 (7스탯)</div>
+                ${createRow('str', '힘 (STR)', this.getStat(u, 'str'), true, 'val-base')}
+                ${createRow('int', '지능 (INT)', this.getStat(u, 'int'), true, 'val-base')}
+                ${createRow('vit', '체력 (VIT)', this.getStat(u, 'vit'), true, 'val-base')}
+                ${createRow('agi', '민첩 (AGI)', this.getStat(u, 'agi'), true, 'val-base')}
+                ${createRow('dex', '숙련 (DEX)', this.getStat(u, 'dex'), true, 'val-base')}
+                ${createRow('vol', '변동 (VOL)', this.getStat(u, 'vol'), true, 'val-base')}
+                ${createRow('luk', '운 (LUK)', this.getStat(u, 'luk'), true, 'val-base')}
+                ${u.statPoints > 0 ? `<div style="text-align:center;color:gold;font-size:11px;margin-top:5px;">PT: ${u.statPoints}</div>` : ''}
+            </div>
+
+            <div class="bp-col col-combat">
+                <div class="bp-header">전투 능력</div>
+                ${createRow('atk_phys', '물리공격', this.getDerivedStat(u,'atk_phys'), false)}
+                ${createRow('atk_mag', '마법공격', this.getDerivedStat(u,'atk_mag'), false)}
+                ${createRow('def', '물리방어', this.getDerivedStat(u,'def'), false)}
+                ${createRow('res', '마법저항', this.getDerivedStat(u,'res'), false)}
+                ${createRow('hit_phys', '물리명중', this.getDerivedStat(u,'hit_phys'), false)}
+                ${createRow('hit_mag', '마법명중', this.getDerivedStat(u,'hit_mag'), false)}
+                ${createRow('crit', '치명타율', this.getDerivedStat(u,'crit'), false)}
+                ${createRow('eva', '회피율', this.getDerivedStat(u,'eva'), false)}
+                ${createRow('tenacity', '상태저항', this.getDerivedStat(u,'tenacity'), false)}
+                ${createRow('spd', '행동속도', this.getDerivedStat(u,'spd'), false)}
+            </div>
+
+            <div class="bp-col col-control" id="control-panel-grid"></div>
+
+            <div class="bp-col col-status">
+                <div class="bp-header">상태</div>
+                <div class="status-list">${statusListHtml}</div>
+            </div>
+        `;
+        
+        // 현재 턴인 아군 유닛이면 스킬 UI 렌더링
+        if (this.currentUnit.team === 0 && !this.isProcessingTurn) {
+            this.renderUI();
+        }
+        
+        const logFooter = document.getElementById('log-footer');
+        if(logFooter) {
+            logFooter.innerHTML = `<button id="btn-surrender" style="width:100%; background:#422; color:#f88; border:1px solid #633; padding:5px; cursor:pointer;">🏳️ 항복하기</button>`;
+            document.getElementById('btn-surrender').onclick = () => {
+                this.gameApp.showConfirm("정말 항복하시겠습니까? (패배 처리, 보상 없음)", () => {
+                    this.gameApp.onBattleEnd(false, true);
+                });
+            };
+        }
+    }
+    // [누락된 함수 1] 하단 스탯 패널 갱신
+    updateStatusPanel() {
+        const p = document.getElementById('bottom-panel');
+        if(!this.viewingUnit) { p.innerHTML = '<div style="margin:auto;color:#666">유닛을 선택하세요</div>'; return; }
+        
+        const u = this.viewingUnit;
+        
+        // 스탯 행 생성 헬퍼 함수
+        const createRow = (key, label, val, isBase, idPrefix='val') => {
+            let btnHtml = '';
+            // 아군이고 스탯 포인트가 있을 때 + 버튼 표시
+            if (isBase && u.team === 0 && u.statPoints > 0) {
+                const cost = this.getStatCost(u, key);
+                const disabled = u.statPoints < cost ? 'disabled' : '';
+                btnHtml = `<button class="stat-up-btn ${disabled}" 
+                    ${disabled ? '' : `onclick="window.battle.allocateStat('${key}')"`}
+                    onmouseenter="window.battle.handleStatHover(event, '${key}', true)"
+                    onmouseleave="window.battle.hideTooltip()">+</button>`;
+            }
+
+            let valClass = 'val-normal';
+            let displayVal = val;
+            if (key === 'crit' || key === 'eva') displayVal = parseFloat(val).toFixed(1) + '%';
+            
+            // 버프/디버프 상태에 따른 색상 처리
+            if (!isBase) {
+                const currentVal = parseFloat(val);
+                // 기본값(버프제외) 계산
+                const baseVal = this.getDerivedStat(u, key, true);
+                if (!['mov', 'rng', 'hp_max', 'mp_max'].includes(key)) {
+                    if (currentVal > baseVal) valClass = 'val-buff';
+                    else if (currentVal < baseVal) valClass = 'val-debuff';
+                }
+            }
+            const previewSpan = `<span id="prev-${idPrefix==='val'?'':idPrefix+'-'}${key}" class="stat-arrow"></span>`;
+            return `<div class="stat-row">
+                <span class="stat-label">${label}</span>
+                <div class="stat-val-box">
+                    <span id="${idPrefix}-${key}" class="stat-val ${valClass}">${displayVal}</span>
+                    ${previewSpan}
+                    ${btnHtml}
+                </div>
+            </div>`;
+        };
+
+        // 상태이상 텍스트 생성
+        const statusListHtml = u.buffs.length > 0 
+            ? u.buffs.map(b => `<div class="status-text-item">${b.icon} <b>${b.name}</b>: ${EFFECTS[b.type]?.desc}</div>`).join('') 
+            : `<div class="status-text-item" style="color:#666;text-align:center;">상태이상 없음</div>`;
+
+       p.innerHTML = `
+            <div class="bp-col col-profile">
+                <div class="action-flags">
+                    <div class="flag-pill ${this.actions.moved?'done':'available'}">이동</div>
+                    <div class="flag-pill ${this.actions.attacked?'done':'available'}">공격</div>
+                    <div class="flag-pill ${this.actions.skilled?'done':'available'}">스킬</div>
+                </div>
+                <div class="portrait-lg">${u.icon}</div>
+                <div class="basic-name">${u.name}</div>
+                <div class="basic-lv">Lv.${u.level} ${u.team===0?'(Hero)':'(Enemy)'}</div>
+                <div style="font-size:11px; width:100%; margin-top:5px;">
+                    HP <div class="bar-container" style="height:15px;"><div class="bar-fill hp-fill" style="width:${(u.curHp/u.hp)*100}%"></div><div class="bar-text">${Math.floor(u.curHp)}/${u.hp}</div></div>
+                    MP <div class="bar-container" style="height:10px;"><div class="bar-fill mp-fill" style="width:${(u.curMp/u.mp)*100}%"></div><div class="bar-text" style="font-size:9px;">${Math.floor(u.curMp)}/${u.mp}</div></div>
+                    <div style="height:4px; margin-top:2px; background:#222;"><div style="height:100%; width:${(u.xp/u.maxXp)*100}%; background:#ccc;"></div></div>
+                </div>
+            </div>
+
+            <div class="bp-col col-base">
+                <div class="bp-header">기초 (7스탯)</div>
+                ${createRow('str', '힘 (STR)', this.getStat(u, 'str'), true, 'val-base')}
+                ${createRow('int', '지능 (INT)', this.getStat(u, 'int'), true, 'val-base')}
+                ${createRow('vit', '체력 (VIT)', this.getStat(u, 'vit'), true, 'val-base')}
+                ${createRow('agi', '민첩 (AGI)', this.getStat(u, 'agi'), true, 'val-base')}
+                ${createRow('dex', '숙련 (DEX)', this.getStat(u, 'dex'), true, 'val-base')}
+                ${createRow('vol', '변동 (VOL)', this.getStat(u, 'vol'), true, 'val-base')}
+                ${createRow('luk', '운 (LUK)', this.getStat(u, 'luk'), true, 'val-base')}
+                ${u.statPoints > 0 ? `<div style="text-align:center;color:gold;font-size:11px;margin-top:5px;">PT: ${u.statPoints}</div>` : ''}
+            </div>
+
+            <div class="bp-col col-combat">
+                <div class="bp-header">전투 능력</div>
+                ${createRow('atk_phys', '물리공격', this.getDerivedStat(u,'atk_phys'), false)}
+                ${createRow('atk_mag', '마법공격', this.getDerivedStat(u,'atk_mag'), false)}
+                ${createRow('def', '물리방어', this.getDerivedStat(u,'def'), false)}
+                ${createRow('res', '마법저항', this.getDerivedStat(u,'res'), false)}
+                ${createRow('hit_phys', '물리명중', this.getDerivedStat(u,'hit_phys'), false)}
+                ${createRow('hit_mag', '마법명중', this.getDerivedStat(u,'hit_mag'), false)}
+                ${createRow('crit', '치명타율', this.getDerivedStat(u,'crit'), false)}
+                ${createRow('eva', '회피율', this.getDerivedStat(u,'eva'), false)}
+                ${createRow('tenacity', '상태저항', this.getDerivedStat(u,'tenacity'), false)}
+                ${createRow('spd', '행동속도', this.getDerivedStat(u,'spd'), false)}
+            </div>
+
+            <div class="bp-col col-control" id="control-panel-grid"></div>
+
+            <div class="bp-col col-status">
+                <div class="bp-header">상태</div>
+                <div class="status-list">${statusListHtml}</div>
+            </div>
+        `;
+        
+        // 현재 턴인 아군 유닛이면 스킬 UI 렌더링
+        if (this.currentUnit.team === 0 && !this.isProcessingTurn) {
+            this.renderUI();
+        }
+        
+        const logFooter = document.getElementById('log-footer');
+        if(logFooter) {
+            logFooter.innerHTML = `<button id="btn-surrender" style="width:100%; background:#422; color:#f88; border:1px solid #633; padding:5px; cursor:pointer;">🏳️ 항복하기</button>`;
+            document.getElementById('btn-surrender').onclick = () => {
+                this.gameApp.showConfirm("정말 항복하시겠습니까? (패배 처리, 보상 없음)", () => {
+                    this.gameApp.onBattleEnd(false, true);
+                });
+            };
+        }
+    }
     async processTextQueue() {
         if(this.textQueue.length > 0) {
             const now = Date.now();
