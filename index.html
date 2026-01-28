@@ -46,46 +46,6 @@
     <div class="stage-list" id="stage-list"></div>
 </div>
 
-<div id="scene-battle" class="scene">
-    <div id="game-frame">
-        <div id="sidebar-left" class="panel">
-            <div class="panel-header">Party List</div>
-            <div id="party-list"></div>
-        </div>
-        <div id="viewport">
-            <canvas id="gridCanvas"></canvas>
-            <div id="overlay-layer"></div>
-            <div id="zoom-hint">🖱️ Wheel to Zoom</div>
-        </div>
-        <div id="sidebar-right" class="panel">
-            <div class="panel-header">Combat Log</div>
-            <div id="log-box"><div id="log-content"></div></div>
-            <div id="log-footer" style="padding:5px; border-top:1px solid #444; text-align:center;"></div>
-        </div>
-        <div id="bottom-panel" class="panel"></div>
-    </div>
-    
-    <div id="battle-result-modal" class="modal">
-        <div class="modal-content">
-            <h2 id="battle-result-title">Victory!</h2>
-            <p id="battle-result-desc">보상 획득!</p>
-            <div class="modal-btns"></div>
-        </div>
-    </div>
-</div>
-
-<div id="scene-sub-menu" class="scene">
-    <div class="sub-header">
-        <div style="display:flex; align-items:center; gap:20px;">
-            <h2 id="sub-menu-title" style="margin:0;">메뉴</h2>
-            <span id="sub-menu-gold" style="color:gold; font-weight:bold; font-size:18px;">💰 0</span>
-        </div>
-        <button class="close-btn" id="btn-sub-close">나가기</button>
-    </div>
-    <div id="sub-menu-content" class="sub-content"></div>
-</div>
-
-<div id="global-tooltip" class="tooltip-box"></div>
 <div id="scene-battle-prep" class="scene" style="background:rgba(0,0,0,0.98); flex-direction:column;">
     <div class="prep-header">
         <h2 id="prep-title" style="color:gold; font-family: 'Orbitron'; margin:0; font-size: 20px;">BATTLE PREPARATION</h2>
@@ -134,12 +94,54 @@
         <button class="prep-btn start" onclick="game.confirmBattleStart()">⚔️ 전투 시작</button>
     </div>
 </div>
+
+<div id="scene-battle" class="scene">
+    <div id="game-frame">
+        <div id="sidebar-left" class="panel">
+            <div class="panel-header">Party List</div>
+            <div id="party-list"></div>
+        </div>
+        <div id="viewport">
+            <canvas id="gridCanvas"></canvas>
+            <div id="overlay-layer"></div>
+            <div id="zoom-hint">🖱️ Wheel to Zoom</div>
+        </div>
+        <div id="sidebar-right" class="panel">
+            <div class="panel-header">Combat Log</div>
+            <div id="log-box"><div id="log-content"></div></div>
+            <div id="log-footer" style="padding:5px; border-top:1px solid #444; text-align:center;"></div>
+        </div>
+        <div id="bottom-panel" class="panel"></div>
+    </div>
+    
+    <div id="battle-result-modal" class="modal">
+        <div class="modal-content">
+            <h2 id="battle-result-title">Victory!</h2>
+            <p id="battle-result-desc">보상 획득!</p>
+            <div class="modal-btns"></div>
+        </div>
+    </div>
+</div>
+
+<div id="scene-sub-menu" class="scene">
+    <div class="sub-header">
+        <div style="display:flex; align-items:center; gap:20px;">
+            <h2 id="sub-menu-title" style="margin:0;">메뉴</h2>
+            <span id="sub-menu-gold" style="color:gold; font-weight:bold; font-size:18px;">💰 0</span>
+        </div>
+        <button class="close-btn" id="btn-sub-close">나가기</button>
+    </div>
+    <div id="sub-menu-content" class="sub-content"></div>
+</div>
+
 <div id="system-modal" class="modal-overlay" style="display:none;">
     <div class="system-modal-box">
         <div class="sys-msg" id="sys-modal-msg">메시지</div>
         <div class="sys-btns" id="sys-modal-btns"></div>
     </div>
 </div>
+
+<div id="global-tooltip" class="tooltip-box"></div>
 
 <script type="module" src="main.js"></script>
 </body>
