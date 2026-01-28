@@ -35,7 +35,6 @@ export class HexGrid {
         this.offscreenCanvas = document.createElement('canvas');
         this.offCtx = this.offscreenCanvas.getContext('2d');
         
-        // [수정] 초기화 순서 명확화: 버퍼 크기/오프셋 계산 -> 그리드 좌표 생성 -> 프리렌더링
         this.resizeOffscreenBuffer();
         this.initGrid();
         this.prerenderGrid();
@@ -43,11 +42,7 @@ export class HexGrid {
 
     setScale(newScale) {
         this.scale = Math.max(0.5, Math.min(2.0, newScale)); // 0.5 ~ 2.0 배율 제한
-        this.resizeOffscreenBuffer(); // 스케일 변경 시 버퍼 크기 재조정
-        // 스케일이 바뀌면 좌표도 바뀌므로 initGrid 다시 필요할 수 있으나, 
-        // 현재 로직상 drawHex시 pixel 변환을 하므로 prerender만 다시 해도 됨.
-        // 하지만 hexes 내부의 x,y 캐싱값을 쓴다면 initGrid도 필요. 
-        // 여기서는 hexes에 x,y를 저장하고 있으므로 initGrid 재호출 권장.
+        this.resizeOffscreenBuffer(); 
         this.initGrid(); 
         this.prerenderGrid();
     }
@@ -62,7 +57,7 @@ export class HexGrid {
         this.offscreenCanvas.width = mapPixelWidth + scaledHexSize * 2;
         this.offscreenCanvas.height = mapPixelHeight + scaledHexSize * 2;
         
-        // [중요] startX, startY 설정 (이 값이 initGrid보다 먼저 설정되어야 함)
+        // startX, startY 설정
         this.startX = scaledHexSize; 
         this.startY = scaledHexSize;
     }
@@ -90,9 +85,7 @@ export class HexGrid {
                 const q = c - (r - (r & 1)) / 2;
                 const r_coord = r; 
 
-                // resizeOffscreenBuffer에서 설정된 startX, startY를 사용
                 const {x, y} = this.hexToPixelRaw(q, r_coord);
-                // 맵 전체를 등록
                 this.hexes.set(`${q},${r_coord}`, { q, r: r_coord, x, y, col: c, row: r });
             }
         }
@@ -100,17 +93,12 @@ export class HexGrid {
 
     prerenderGrid() {
         this.offCtx.clearRect(0, 0, this.offscreenCanvas.width, this.offscreenCanvas.height);
-        // 배경색 (#viewport 배경과 구분되도록 함, 어차피 캔버스 배경은 투명하거나 CSS 따름)
-        // 여기서는 오프스크린 캔버스 자체 배경을 그림
         this.offCtx.fillStyle = "#080808"; 
         this.offCtx.fillRect(0, 0, this.offscreenCanvas.width, this.offscreenCanvas.height);
         
-        // 그리드 다시 그리기 (스케일 반영됨)
         this.hexes.forEach(h => {
             const pos = this.hexToPixelRaw(h.q, h.r);
-            // [수정] 시인성 개선 (Visual Contrast Issue 해결)
-            // 기존: Fill #1a1a1a, Stroke #333
-            // 변경: Fill #222222 (조금 더 밝음), Stroke #505050 (훨씬 잘 보임)
+            // 배경 그리드 색상 (어두운 회색)
             this.drawHex(this.offCtx, pos.x, pos.y, "#222222", "#505050", 1);
         });
     }
@@ -129,7 +117,6 @@ export class HexGrid {
         return this.hexToPixelRaw(q, r);
     }
 
-    // [핵심] 줌 스케일 반영된 역산
     pixelToHex(worldX, worldY) {
         let x = worldX - this.startX;
         let y = worldY - this.startY;
@@ -173,6 +160,7 @@ export class HexGrid {
         return dirs.map(d => ({ q: hex.q + d.q, r: hex.r + d.r }));
     }
 
+    // 직선 경로 구하기 (원거리 공격용)
     getLine(start, target, range) {
         let results = [];
         let dist = this.getDistance(start, target);
@@ -193,6 +181,7 @@ export class HexGrid {
         return results;
     }
 
+    // A* 길찾기 (이동용)
     findPath(start, end, isWalkable) {
         let frontier = [start];
         let cameFrom = new Map();
@@ -223,5 +212,30 @@ export class HexGrid {
             current = prev;
         }
         return path.reverse();
+    }
+    
+    // 특정 방향으로 n칸 떨어진 헥사 구하기 (넉백용)
+    getHexInDirection(start, target, distance) {
+        const sCube = this.axialToCube(start.q, start.r);
+        const tCube = this.axialToCube(target.q, target.r);
+        const dist = this.getDistance(start, target);
+        
+        if (dist === 0) return start;
+
+        // 벡터 계산: (target - start) 방향
+        const dx = tCube.x - sCube.x;
+        const dy = tCube.y - sCube.y;
+        const dz = tCube.z - sCube.z;
+
+        // 방향 정규화 후 거리 곱하기 (근사치)
+        const scale = (dist + distance) / dist;
+        
+        const newCube = {
+            x: sCube.x + dx * scale,
+            y: sCube.y + dy * scale,
+            z: sCube.z + dz * scale
+        };
+        
+        return this.cubeToAxial(this.cubeRound(newCube));
     }
 }
