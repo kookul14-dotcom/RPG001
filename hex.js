@@ -214,28 +214,41 @@ export class HexGrid {
         return path.reverse();
     }
     
-    // 특정 방향으로 n칸 떨어진 헥사 구하기 (넉백용)
+// [hex.js] getHexInDirection 함수 (수정됨: 벽에 밀리는 로직)
     getHexInDirection(start, target, distance) {
         const sCube = this.axialToCube(start.q, start.r);
         const tCube = this.axialToCube(target.q, target.r);
-        const dist = this.getDistance(start, target);
+        const distToTarget = this.getDistance(start, target);
         
-        if (dist === 0) return start;
+        if (distToTarget === 0) return start;
 
-        // 벡터 계산: (target - start) 방향
-        const dx = tCube.x - sCube.x;
-        const dy = tCube.y - sCube.y;
-        const dz = tCube.z - sCube.z;
+        // 시작점과 방향 벡터 계산
+        const dx = (tCube.x - sCube.x) / distToTarget;
+        const dy = (tCube.y - sCube.y) / distToTarget;
+        const dz = (tCube.z - sCube.z) / distToTarget;
 
-        // 방향 정규화 후 거리 곱하기 (근사치)
-        const scale = (dist + distance) / dist;
+        let lastValidHex = start;
+
+        // [핵심 수정] 1칸씩 전진하며 맵 밖인지 체크
+        // distance(넉백 거리)만큼 반복
+        for (let i = 1; i <= distance; i++) {
+            const nextCube = {
+                x: sCube.x + dx * i,
+                y: sCube.y + dy * i,
+                z: sCube.z + dz * i
+            };
+            
+            const nextHex = this.cubeToAxial(this.cubeRound(nextCube));
+            
+            // 맵에 존재하는 타일이면 lastValidHex 갱신
+            if (this.hexes.has(`${nextHex.q},${nextHex.r}`)) {
+                lastValidHex = nextHex;
+            } else {
+                // 맵 밖을 만나면 즉시 중단하고 직전 유효 타일 반환 (벽에 부딪힘)
+                break;
+            }
+        }
         
-        const newCube = {
-            x: sCube.x + dx * scale,
-            y: sCube.y + dy * scale,
-            z: sCube.z + dz * scale
-        };
-        
-        return this.cubeToAxial(this.cubeRound(newCube));
+        return lastValidHex;
     }
 }
