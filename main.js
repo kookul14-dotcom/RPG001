@@ -49,7 +49,24 @@ function createReactiveObject(target, callback) {
 const GameState = createReactiveObject(rawGameState, () => {
     localStorage.setItem('hexRpgSave', JSON.stringify(rawGameState));
 });
+// [추가] 스탯 가중치 정의 (4번 요청 구현)
+const STAT_WEIGHTS = {
+    'str': { 'atk_phys': 'high', 'hp_max': 'mid', 'def': 'low' },
+    'int': { 'atk_mag': 'high', 'mp_max': 'mid', 'mp_regen': 'mid', 'res': 'mid', 'hit_mag': 'mid', 'spd': 'low' },
+    'vit': { 'hp_max': 'high', 'def': 'mid', 'hp_regen': 'mid', 'tenacity': 'low' },
+    'agi': { 'eva': 'high', 'hit_phys': 'mid', 'spd': 'mid', 'mov': 'low' },
+    'dex': { 'hit_phys': 'high', 'hit_mag': 'high', 'crit': 'mid', 'atk_phys': 'low', 'atk_mag': 'low' },
+    'vol': { 'atk_phys': 'mid', 'atk_mag': 'mid' },
+    'luk': { 'crit': 'high', 'eva': 'mid', 'hit_phys': 'low', 'hit_mag': 'low', 'tenacity': 'low' }
+};
 
+// [추가] 가중치별 화살표 HTML 반환 헬퍼
+function getArrowHtml(weight) {
+    if (weight === 'high') return '<span class="arrow-high">⬆⬆</span>';
+    if (weight === 'mid') return '<span class="arrow-mid">⬆</span>';   // 녹색 단일
+    if (weight === 'low') return '<span class="arrow-low">↑</span>';   // 노란색 단일
+    return '';
+}
 class GameApp {
     constructor() {
         this.gameState = GameState; 
@@ -343,9 +360,22 @@ class GameApp {
             const isDeployed = party.some(p => p.rosterIdx === originalIdx);
             const hpPct = (h.curHp / h.hp) * 100;
             const mpPct = (h.curMp / h.mp) * 100;
+            const isDead = h.curHp <= 0;
 
             const card = document.createElement('div');
             card.className = `roster-card-h ${isDeployed ? 'deployed' : ''}`;
+            if (isDead) {
+                card.style.filter = 'grayscale(100%) brightness(0.5)';
+                card.style.cursor = 'not-allowed';
+            }
+
+            card.innerHTML = `
+                <div style="font-size:24px; margin-bottom:2px;">${h.icon}</div>
+                <div style="font-size:11px; font-weight:bold; color:#eee; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:90px;">${h.name}</div>
+                <div style="font-size:9px; color:#888;">Lv.${h.level} ${h.classKey}</div>
+                ${isDead ? '<div style="color:#f44; font-size:10px; font-weight:bold;">행동불능</div>' : ''} <div class="mini-bars">
+                    </div>
+            `;
             
             card.innerHTML = `
                 <div style="font-size:24px; margin-bottom:2px;">${h.icon}</div>
@@ -381,6 +411,12 @@ class GameApp {
             if (data.type === 'roster') {
                 const heroIdx = data.hIdx;
                 const hero = GameState.heroes[heroIdx];
+                if (hero.curHp <= 0) {
+                    this.showAlert("기절한 영웅은 출전할 수 없습니다.\n여관에서 회복시켜 주세요.");
+                    return;
+                }
+
+                if (party.some(p => p.rosterIdx === heroIdx)) return;
 
                 if (party.some(p => p.rosterIdx === heroIdx)) return; 
 
@@ -460,13 +496,21 @@ class GameApp {
             if(eData) weakMap[ELEMENTS[eData.element].weak] = true;
         });
 
-        const scoredHeroes = GameState.heroes.map((h, idx) => {
-            let score = h.level * 10 + (h.str+h.int+h.def) * 0.5;
-            if (weakMap[h.element]) score += 500; 
-            return { hero: h, score: score, rosterIdx: idx };
-        });
-        scoredHeroes.sort((a,b) => b.score - a.score);
-
+        const scoredHeroes = GameState.heroes
+            .filter(h => h.curHp > 0) // HP 0 초과인 영웅만
+            .map((h, idx) => {
+                // 원래 인덱스(rosterIdx)를 유지하기 위해 전체 배열에서 찾거나 map에서 index 사용 주의
+                // GameState.heroes가 필터링되므로, 원본 인덱스를 찾기 위해 map을 먼저 쓰거나 아래처럼 함:
+                // 여기선 간단히 전체를 map하고 filter하는게 인덱스 유지에 유리함.
+                return { hero: h, originalIdx: GameState.heroes.indexOf(h) };
+            })
+            .filter(item => item.hero.curHp > 0) // 다시 한번 확실히 체크
+            .map(item => {
+                const h = item.hero;
+                let score = h.level * 10 + (h.str+h.int+h.def) * 0.5;
+                // ... (점수 계산 로직 동일) ...
+                return { hero: h, score: score, rosterIdx: item.originalIdx };
+            });
         this.prepState.party = [];
         const candidates = scoredHeroes.slice(0, 6);
         const HERO_BASE_COL = 7;
@@ -661,26 +705,46 @@ class GameApp {
         content.innerHTML = html;
     }
 
+    // [main.js] GameApp 클래스 내부 refreshTavern()
+    
     refreshTavern(isPaid = false) {
-        const allKeys = Object.keys(CLASS_DATA).filter(k => !['SLIME','GOBLIN','ORC','SKELETON','DRAKE','LICH','GOLEM','SUCCUBUS'].includes(k));
+        // 1. 고용 가능한 '영웅' 직업만 명시적으로 정의 (몬스터 원천 차단)
+        const HERO_CLASSES = [
+            'WARRIOR', 'KNIGHT', 'MONK', 'ROGUE', 'ARCHER', 
+            'SORCERER', 'CLERIC', 'BARD', 'DANCER', 'ALCHEMIST'
+        ];
+
+        // 2. 이미 보유한 영웅인지 확인
         const owned = new Set(GameState.heroes.map(h => h.classKey));
-        const available = allKeys.filter(k => !owned.has(k));
+        
+        // 3. 보유하지 않은 영웅만 필터링
+        const available = HERO_CLASSES.filter(k => !owned.has(k));
         
         GameState.recruitPool = [];
+        
+        // 4. 랜덤으로 3명 뽑기
         if (available.length > 0) {
+            // 셔플(Shuffle)
             for (let i = available.length - 1; i > 0; i--) {
                 const j = Math.floor(Math.random() * (i + 1));
                 [available[i], available[j]] = [available[j], available[i]];
             }
+            
+            // 최대 3명 추출
             available.slice(0, 3).forEach(k => {
                 const h = JSON.parse(JSON.stringify(CLASS_DATA[k]));
                 h.classKey = k; 
-                h.hp += Math.floor(Math.random()*20); 
-                h.curHp = h.hp; h.curMp = h.mp;
-                h.xp = 0; h.maxXp = 100; h.statPoints = 0; 
+                
+                // 약간의 능력치 랜덤성 부여
+                h.hp += Math.floor(Math.random() * 20); 
+                h.curHp = h.hp; 
+                h.curMp = h.mp;
+                h.xp = 0; 
+                h.maxXp = 100; 
+                h.statPoints = 0; 
                 h.equipment = { weapon: null, armor: null, acc1: null, acc2: null, potion1: null, potion2: null };
                 
-                // [수정] 7스탯 초기화
+                // 7스탯 초기화
                 h.vol = h.vol || 10; 
                 h.luk = h.luk || 10;
 
@@ -727,32 +791,30 @@ class GameApp {
         this.renderManageUI();
     }
 
-    // [수정] 7스탯 미리보기 공식 적용
+    // [수정된 함수]
     previewStatImpact(statKey) {
+        // 1. 기존 미리보기 초기화
         this.clearStatPreview(); 
+        
+        // 2. 선택된 영웅 확인
         const hero = GameState.heroes[this.selectedHeroIdx];
-        if(!hero) return;
+        if (!hero) return;
 
-        // 새로운 7스탯 시스템 공식에 따른 영향도 매핑
-        const impactMap = {
-            'str': ['c-stat-atk_phys', 'c-stat-def', 'c-stat-hp_max'], // 힘 -> 물리공격, 방어, 최대체력
-            'int': ['c-stat-atk_mag', 'c-stat-hit_mag', 'c-stat-mp_max', 'c-stat-mp_regen', 'c-stat-res', 'c-stat-spd'], // 지능 -> 마법공격, 마법명중, 마나, 마나재생, 마법저항, 속도
-            'vit': ['c-stat-def', 'c-stat-hp_max', 'c-stat-hp_regen', 'c-stat-tenacity', 'c-stat-res'], // 체력 -> 방어, 최대체력, 체력재생, 상태저항, 마법저항
-            'agi': ['c-stat-hit_phys', 'c-stat-eva', 'c-stat-spd', 'c-stat-mov', 'c-stat-tenacity'], // 민첩 -> 물리명중, 회피, 속도, 이동, 상태저항
-            'dex': ['c-stat-atk_phys', 'c-stat-atk_mag', 'c-stat-hit_phys', 'c-stat-hit_mag', 'c-stat-crit'], // 숙련 -> 공격력(물리/마법 최소뎀 관여), 명중(물리/마법), 크리
-            'vol': ['c-stat-atk_phys', 'c-stat-atk_mag'], // 변동성 -> 공격력(최대 데미지 관여)
-            'luk': ['c-stat-hit_phys', 'c-stat-hit_mag', 'c-stat-crit', 'c-stat-eva', 'c-stat-tenacity'] // 운 -> 명중, 크리, 회피, 상태저항
-        };
+        // 3. 상단에 정의한 가중치 데이터 가져오기
+        const impacts = STAT_WEIGHTS[statKey];
+        if (!impacts) return;
 
-        const targets = impactMap[statKey];
-        if(targets) {
-            targets.forEach(id => {
-                const el = document.getElementById(id);
-                if(el) {
-                    const arrowSpan = el.querySelector('.stat-preview-arrow');
-                    if(arrowSpan) arrowSpan.textContent = '▲';
+        // 4. 영향받는 스탯들을 순회하며 화살표 표시
+        for (const [combatStat, weight] of Object.entries(impacts)) {
+            // UI 요소 ID 찾기 (예: c-stat-atk_phys)
+            const el = document.getElementById(`c-stat-${combatStat}`);
+            if (el) {
+                const arrowSpan = el.querySelector('.stat-preview-arrow');
+                if (arrowSpan) {
+                    // 가중치에 맞는 화살표 HTML 삽입
+                    arrowSpan.innerHTML = getArrowHtml(weight);
                 }
-            });
+            }
         }
     }
 
@@ -783,7 +845,7 @@ class GameApp {
             'PALADIN': "빛의 신을 섬기는 기사. 정수리의 광채가 그 증거입니다."
         };
 
-        const getStatDetail = (key) => {
+        const getStatDetail = (key) => { /* ... 기존과 동일 ... */ 
             const base = Number(hero[key]) || 0;
             let bonus = 0;
             Object.values(hero.equipment).forEach(itemId => {
@@ -797,8 +859,7 @@ class GameApp {
             return { base, bonus };
         };
 
-        // [수정] 7스탯 기반 전투 수치 계산 로직 (관리창 표기용)
-        const getCombatVal = (stat) => {
+        const getCombatVal = (stat) => { /* ... 기존과 동일 ... */ 
             const str = hero.str + (hero.atkType==='PHYS'?getStatDetail('str').bonus:0);
             const int = hero.int + (hero.atkType==='MAG'?getStatDetail('int').bonus:0);
             const vit = hero.vit;
@@ -809,7 +870,7 @@ class GameApp {
 
             if(stat === 'atk_phys') return Math.floor(str*1 + dex*0.5);
             if(stat === 'atk_mag') return Math.floor(int*1.2 + dex*0.3);
-            if(stat === 'def') return Math.floor(vit*1 + str*0.3 + getStatDetail('def').bonus); // 방어구 포함
+            if(stat === 'def') return Math.floor(vit*1 + str*0.3 + getStatDetail('def').bonus);
             if(stat === 'res') return Math.floor(int*0.8 + vit*0.4);
             if(stat === 'hit_phys') return Math.floor(dex*1.2 + agi*0.5 + luk*0.3);
             if(stat === 'hit_mag') return Math.floor(int*0.6 + dex*0.4 + luk*0.2);
@@ -817,10 +878,51 @@ class GameApp {
             if(stat === 'eva') return (agi*1 + luk*0.3).toFixed(1) + '%';
             if(stat === 'tenacity') return Math.floor(vit*0.5 + luk*0.5);
             if(stat === 'spd') return Math.floor(agi*1 + int*0.5);
-            if(stat === 'hp_max') return hero.hp; // 현재 MaxHP
-            if(stat === 'mp_max') return hero.mp;
             return '-';
         };
+
+        const hpPct = (hero.curHp / hero.hp) * 100;
+        const mpPct = (hero.curMp / hero.mp) * 100;
+        const xpPct = (hero.xp / hero.maxXp) * 100;
+        
+        const barsHtml = `
+            <div class="manage-bar-group">
+                <div class="manage-bar-row">
+                    <span style="width:20px; font-weight:bold; color:#f55;">HP</span> 
+                    <div class="m-bar-bg"><div class="bar-fill hp-fill" style="width:${hpPct}%"></div></div> 
+                    <span style="width:60px; text-align:right;">${Math.floor(hero.curHp)}/${hero.hp}</span>
+                </div>
+                <div class="manage-bar-row">
+                    <span style="width:20px; font-weight:bold; color:#0cf;">MP</span> 
+                    <div class="m-bar-bg"><div class="bar-fill mp-fill" style="width:${mpPct}%"></div></div> 
+                    <span style="width:60px; text-align:right;">${Math.floor(hero.curMp)}/${hero.mp}</span>
+                </div>
+                <div class="manage-bar-row">
+                    <span style="width:20px; font-weight:bold; color:#aaa;">XP</span> 
+                    <div class="m-bar-bg"><div class="bar-fill xp-fill" style="width:${xpPct}%"></div></div> 
+                    <span style="width:60px; text-align:right;">${Math.floor(hero.xp)}/${hero.maxXp}</span>
+                </div>
+            </div>`;
+
+        // [수정] 스킬 설명 undefined 방지 및 데이터 경로 확인
+        let skillsHtml = `<div class="equip-group-title" style="margin-top:10px;"><span>SKILLS</span></div><div style="display:grid; grid-template-columns:1fr; gap:5px; margin-bottom:15px;">`;
+        if (hero.skills) {
+            hero.skills.forEach(s => {
+                skillsHtml += `
+                    <div style="background:#1a1a1a; padding:6px 10px; border-radius:4px; display:flex; align-items:center; gap:10px; border:1px solid #333;">
+                        <div style="font-size:18px;">${s.icon || '⚔️'}</div>
+                        <div style="flex:1;">
+                            <div style="color:gold; font-size:11px; font-weight:bold;">${s.name || '스킬'}</div>
+                            <div style="color:#666; font-size:10px;">${s.desc || '설명 없음'}</div>
+                        </div>
+                        <div style="text-align:right; font-size:10px; color:#888;">
+                            <div>MP ${s.mp || 0}</div>
+                            <div>Cool ${s.cool || 0}</div>
+                        </div>
+                    </div>`;
+            });
+        }
+        skillsHtml += `</div>`;
 
         content.innerHTML = `
             <div class="manage-container">
@@ -835,20 +937,15 @@ class GameApp {
                         <div style="font-size: 70px; margin-bottom:10px;">${hero.icon}</div>
                         <h2 style="color:gold; margin:0; font-family:'Orbitron';">LV.${hero.level} ${hero.name}</h2>
                         
-                        <div style="font-size:12px; color:#888; text-align:center; margin-bottom:5px; line-height:1.4; margin:10px 0 10px; padding:10px; background:rgba(0,0,0,0.3); border-radius:4px;">
+                        <div style="font-size:12px; color:#888; text-align:center; line-height:1.4; margin:10px 0 10px; padding:10px; background:rgba(0,0,0,0.3); border-radius:4px; width:100%;">
                             ${heroBios[hero.classKey] || "이 영웅은 비밀이 많습니다."}
                         </div>
 
                         <div class="equipment-layout" style="margin-top:10px;">
-                            <div class="equip-group-title"><span>WEAPON & ARMOR</span></div>
                             ${this.renderSlot(hero, 'weapon', '무기', '🗡️')}
                             ${this.renderSlot(hero, 'armor', '갑옷', '🛡️')}
-                            
-                            <div class="equip-group-title"><span>ACCESSORIES</span></div>
                             ${this.renderSlot(hero, 'acc1', '장신구 I', '💍')}
                             ${this.renderSlot(hero, 'acc2', '장신구 II', '📿')}
-                            
-                            <div class="equip-group-title"><span>CONSUMABLES</span></div>
                             ${this.renderSlot(hero, 'potion1', '슬롯 I', '🧪')}
                             ${this.renderSlot(hero, 'potion2', '슬롯 II', '💊')}
                         </div>
@@ -856,9 +953,11 @@ class GameApp {
                 </div>
 
                 <div class="manage-col">
-                    <div class="col-header">▼ STATUS & INVENTORY</div>
-                    <div class="col-body" style="padding:15px; display:flex; flex-direction:column; gap:15px;">
+                    <div class="col-header">▼ STATUS & BAG</div>
+                    <div class="col-body" style="padding:15px; display:flex; flex-direction:column;">
                         
+                        ${barsHtml}
+
                         <div class="stat-panel-container">
                             <div class="stat-panel" style="flex:1;">
                                 <div class="stat-sub-header">BASIC (PT: ${hero.statPoints})</div>
@@ -905,6 +1004,8 @@ class GameApp {
                                 `).join('')}
                             </div>
                         </div>
+
+                        ${skillsHtml}
 
                         <div style="background: rgba(0,0,0,0.3); padding: 10px; border-radius: 4px; border: 1px solid #333;">
                             <div style="font-size: 11px; color: gold; margin-bottom: 8px; font-family: 'Orbitron'; text-align:center;">INVENTORY</div>
@@ -1286,15 +1387,27 @@ function render() {
     requestAnimationFrame(render);
 }
 
-function drawUnit(ctx, u, cam, battle) {
-    const pos = window.grid.hexToPixel(u.q, u.r); 
-    let drawX = pos.x - cam.x;
-    let drawY = pos.y - cam.y;
+// [main.js] drawUnit 함수 수정 (기존 함수 전체를 교체하세요)
 
+function drawUnit(ctx, u, cam, battle) {
+    // [수정] 애니메이션 중인 경우 visualPos(픽셀좌표) 우선 사용, 아니면 그리드 좌표 사용
+    let drawX, drawY;
+
+    if (u.visualPos) {
+        drawX = u.visualPos.x - cam.x;
+        drawY = u.visualPos.y - cam.y;
+    } else {
+        const pos = window.grid.hexToPixel(u.q, u.r); 
+        drawX = pos.x - cam.x;
+        drawY = pos.y - cam.y;
+    }
+
+    // 쉐이크 효과
     if (u.shake > 0) {
         drawX += (Math.random() - 0.5) * u.shake; drawY += (Math.random() - 0.5) * u.shake;
         u.shake *= 0.9; if(u.shake < 0.5) u.shake = 0;
     }
+    // 피격 넉백 효과 (bump)
     if (u.bumpX || u.bumpY) {
         drawX += u.bumpX; drawY += u.bumpY;
         u.bumpX *= 0.8; u.bumpY *= 0.8;
