@@ -1,4 +1,3 @@
-// battle.js (전체 코드)
 import { ELEMENTS, STAT_NAMES, CLASS_DATA, EFFECTS, HEX_SIZE, ITEM_DATA, STAGE_DATA } from './data.js';
 import { createCursorFromEmoji } from './hex.js';
 
@@ -20,9 +19,10 @@ export class BattleSystem {
         this.viewingUnit = null; 
         this.selectedSkill = null;
         this.confirmingSkill = null;
+        this.hoverSkill = null; // [추가] 마우스 오버 스킬 (사거리 표시용)
         
-        // [변경] 행동 상태 관리: moved(이동여부), attacked(일반공격여부), skilled(스킬여부)
-        this.actions = { moved: false, attacked: false, skilled: false };
+        // [변경] 행동 상태 관리: moved(이동여부), acted(행동여부 - 공격/스킬 통합)
+        this.actions = { moved: false, acted: false };
         
         this.reachableHexes = []; 
         this.attackableHexes = []; 
@@ -76,6 +76,7 @@ export class BattleSystem {
             this.grid.canvas.width = parent.clientWidth;
             this.grid.canvas.height = parent.clientHeight;
         }
+        this.updateFloatingControls();
     }
 
     handleWheel(e) {
@@ -83,6 +84,7 @@ export class BattleSystem {
         const delta = e.deltaY > 0 ? -0.1 : 0.1;
         const newScale = this.grid.scale + delta;
         this.grid.setScale(newScale);
+        this.updateFloatingControls();
     }
 
     getCanvasCoordinates(e) {
@@ -93,7 +95,7 @@ export class BattleSystem {
         };
     }
 
-    // [battle.js] initUnits 함수 (최종 수정본)
+    // [battle.js] initUnits 함수
     initUnits(chapter, stage) {
         let idCounter = 1;
         const occupied = new Set();
@@ -231,8 +233,7 @@ export class BattleSystem {
                     if (parts[2]) r = Number(parts[2]);
                 }
 
-                // [★핵심 수정★] 문자열 정제 (소문자->대문자, 쉼표/공백 제거)
-                // 이 줄이 없으면 "SLIME," 나 "rat"을 인식하지 못합니다.
+                // 문자열 정제
                 key = key.trim().toUpperCase().replace(/,/g, '');
 
                 // 3. 수량만큼 반복 소환
@@ -241,8 +242,7 @@ export class BattleSystem {
                         spawn(CLASS_DATA[key], 1, q, r);
                     }
                 } else {
-                    // 데이터가 없을 때 콘솔에 경고 표시 (F12 눌러서 확인 가능)
-                    console.warn(`[Monster Error] Key: "${key}" not found. Original: "${rawEntry}"`);
+                    console.warn(`[Monster Error] Key: "${key}" not found.`);
                 }
             });
         } else {
@@ -309,8 +309,7 @@ export class BattleSystem {
         this.regenResources(this.currentUnit);
         this.viewingUnit = this.currentUnit;
 
-        // [핵심] 턴 시작시 행동 플래그 초기화
-        this.actions = { moved: false, attacked: false, skilled: false };
+        this.actions = { moved: false, acted: false };
         this.selectedSkill = null;
         this.confirmingSkill = null;
 
@@ -347,7 +346,6 @@ export class BattleSystem {
             if (b.duration <= 0) this.currentUnit.buffs.splice(i, 1);
         }
 
-        // [수정] 상태이상 데미지로 인한 사망 시 즉시 종료
         if (this.currentUnit.curHp <= 0) { 
             this.handleDeath(this.currentUnit); 
             this.endTurn(); 
@@ -372,6 +370,11 @@ export class BattleSystem {
         this.updateStatusPanel();
         this.renderPartyList();
         this.updateCursor();
+        
+        // [수정] 턴 시작 시 즉시 머리 위 아이콘 표시
+        if (this.currentUnit.team === 0) {
+            this.updateFloatingControls();
+        }
 
         if (this.currentUnit.team === 1) { this.runAI(); } 
         else {
@@ -382,14 +385,19 @@ export class BattleSystem {
                 this.isProcessingTurn = false; 
                 this.calcReachable();
                 this.renderUI();
+                this.updateFloatingControls();
                 if (this.isAutoBattle) setTimeout(() => this.runAllyAutoAI(), 300);
             }
         }
     }
 
     endTurn() { 
+        // [수정] 턴 종료 시 플로팅 버튼 제거
+        const floatBtn = document.getElementById('floating-controls');
+        if(floatBtn) floatBtn.remove();
+
         this.isProcessingTurn = true; 
-        this.actions = { moved: true, attacked: true, skilled: true }; // 턴 종료시 모든 액션 차단
+        this.actions = { moved: true, acted: true }; 
         setTimeout(() => this.nextTurn(), 100);
     }
 
@@ -421,6 +429,102 @@ export class BattleSystem {
             else if (item.stat === stat) bonus += Number(item.val);
         });
         return bonus;
+    }
+// [battle.js] BattleSystem 클래스 내부에 추가
+
+    // 돌진 시 멈출 최종 좌표 계산 (벽이나 적을 만나면 그 앞에서 멈춤)
+    getDashDestination(unit, target) {
+        const dist = this.grid.getDistance(unit, target);
+        // 시전자부터 타겟까지 직선 경로의 모든 타일을 가져옴
+        const line = this.grid.getLine(unit, target, dist);
+        
+        let lastValidHex = { q: unit.q, r: unit.r }; // 기본값: 제자리
+
+        // index 1부터 시작 (0은 자기 자신 위치)
+        for (let i = 1; i < line.length; i++) {
+            const hex = line[i];
+            
+            // 1. 타겟 위치에 도달했으면, 그 직전(lastValidHex)이 공격 위치임 -> 리턴
+            if (hex.q === target.q && hex.r === target.r) {
+                return lastValidHex;
+            }
+
+            // 2. 장애물 체크 (맵 밖이거나, 다른 유닛이 있거나)
+            // 맵에 존재하는 타일인가?
+            if (!this.grid.hexes.has(`${hex.q},${hex.r}`)) {
+                return lastValidHex; // 벽이면 직전 위치 리턴
+            }
+            
+            // 살아있는 유닛이 있는가?
+            const obstacle = this.getUnitAt(hex.q, hex.r);
+            if (obstacle) {
+                return lastValidHex; // 다른 유닛이 막고 있으면 그 앞 리턴
+            }
+
+            // 통과 가능하면 유효 타일로 갱신
+            lastValidHex = hex;
+        }
+        
+        return lastValidHex;
+    }
+    // [battle.js] playDashAnimation 함수 교체 (기존 함수 덮어쓰기)
+
+    async playDashAnimation(unit, target) {
+        // 1. 멈출 위치(목적지) 계산
+        const destHex = this.getDashDestination(unit, target);
+        
+        const startPos = this.grid.hexToPixel(unit.q, unit.r);
+        const endPos = this.grid.hexToPixel(destHex.q, destHex.r);
+
+        // 이동할 거리가 거의 없으면(바로 옆 등) 애니메이션 생략
+        const distPx = Math.sqrt(Math.pow(endPos.x - startPos.x, 2) + Math.pow(endPos.y - startPos.y, 2));
+        if (distPx < 5) return;
+
+        this.isAnimating = true;
+        
+        // 2. 돌진 애니메이션 (Ease-Out: 빠르게 출발해서 감속하며 도착)
+        const duration = 200; // 0.2초
+        const startTime = Date.now();
+
+        await new Promise(resolve => {
+            const animate = () => {
+                const now = Date.now();
+                const progress = Math.min(1, (now - startTime) / duration);
+                
+                // Ease-Out Quart (시원하게 날아가는 느낌)
+                const ease = 1 - Math.pow(1 - progress, 4);
+
+                unit.visualPos = {
+                    x: startPos.x + (endPos.x - startPos.x) * ease,
+                    y: startPos.y + (endPos.y - startPos.y) * ease
+                };
+
+                if (progress < 1) requestAnimationFrame(animate);
+                else resolve();
+            };
+            requestAnimationFrame(animate);
+        });
+
+        // 3. 데이터 좌표 갱신 (실제 이동 처리)
+        unit.q = destHex.q;
+        unit.r = destHex.r;
+        unit.visualPos = null; // 애니메이션 좌표 해제 -> 실제 좌표 사용
+        
+        // 이동한 것으로 처리 (추가 이동 불가하게)
+        this.actions.moved = true; 
+        
+        // 타격감 연출 (타겟 흔들기)
+        this.triggerShakeAnimation(target);
+        
+        // UI 갱신 (사거리 등이 바뀌었으므로)
+        this.calcReachable(); 
+        this.updateStatusPanel();
+        this.updateFloatingControls(); // [중요] 머리 위 버튼 위치도 따라가야 함
+
+        this.isAnimating = false;
+        
+        // 잠시 대기 (타격감)
+        await new Promise(r => setTimeout(r, 100));
     }
 
     getStat(unit, stat, excludeBuffs = false) {
@@ -693,13 +797,19 @@ export class BattleSystem {
     }
 
     calculateDamage(atkUnit, defUnit, skillMult, dmgType) {
-        if (!dmgType) dmgType = atkUnit.atkType; // 기본 타입 방어
+        if (!dmgType) dmgType = atkUnit.atkType; 
 
-        // 1. 기초 스탯 로드
+        // 1. [추가] 실명(BLIND) 상태면 50% 확률로 빗나감
+        if (this.hasStatus(atkUnit, 'BLIND') && Math.random() < 0.5) {
+            this.showFloatingText(atkUnit, "MISS (Blind)", "#888");
+            return 0;
+        }
+
+        // 2. 기초 스탯 로드
         const dex = this.getStat(atkUnit, 'dex');
         const vol = this.getStat(atkUnit, 'vol');
         
-        // 2. 공격력 및 범위 계산 (기획된 계수 적용)
+        // 3. 공격력 및 범위 계산
         let baseAtk, minMult, maxMult;
 
         if (dmgType === 'MAG') {
@@ -716,13 +826,13 @@ export class BattleSystem {
         let maxDmg = baseAtk * maxMult;
         if (minDmg > maxDmg) minDmg = maxDmg * 0.95; 
 
-        // 3. 랜덤 데미지 산출
+        // 4. 랜덤 데미지 산출
         let rawDmg = Math.random() * (maxDmg - minDmg) + minDmg;
 
-        // 4. 방어력 적용
+        // 5. 방어력 적용
         const defense = dmgType === 'MAG' ? this.getDerivedStat(defUnit, 'res') : this.getDerivedStat(defUnit, 'def');
         
-        // 5. 상성 및 배율 적용
+        // 6. 상성 및 배율 적용
         let eleMult = 1.0;
         const atkEle = ELEMENTS[atkUnit.element || 'NONE'];
         if (atkEle.strong === defUnit.element) eleMult = 1.3;
@@ -730,7 +840,13 @@ export class BattleSystem {
 
         let finalDmg = (rawDmg * skillMult * eleMult) * (100 / (100 + defense));
 
-        // 6. 치명타 (운 + 숙련도 기반 확률)
+        // [추가] 저주(CURSE) 상태면 피해량 1.5배 증가
+        if (this.hasStatus(defUnit, 'CURSE')) {
+            finalDmg *= 1.5;
+            this.showFloatingText(defUnit, "Cursed Dmg!", "#b0b");
+        }
+
+        // 7. 치명타
         const critRate = this.getDerivedStat(atkUnit, 'crit');
         if (Math.random() * 100 < critRate) {
             finalDmg *= 1.5;
@@ -835,7 +951,7 @@ export class BattleSystem {
             }
 
             let actionDone = false;
-            if (!this.actions.skilled && unit.skills) {
+            if (!this.actions.acted && unit.skills) {
                 const usableSkills = unit.skills.filter(s => 
                     unit.curMp >= s.mp && (unit.cooldowns[s.id] || 0) === 0 &&
                     this.grid.getDistance(unit, target) <= s.rng &&
@@ -851,7 +967,7 @@ export class BattleSystem {
                 }
             }
 
-            if (!actionDone && !this.actions.attacked) {
+            if (!actionDone && !this.actions.acted) {
                 await new Promise(r => setTimeout(r, 300));
                 this.performAttack(unit, target, 1.0, "공격");
             }
@@ -882,9 +998,16 @@ export class BattleSystem {
         
         targets.forEach(t => {
             if (eff.type === 'NUCKBACK') {
-                const dest = this.grid.getHexInDirection(caster, t, 2);
+                // [★ 수정] 시전자와 타겟 사이의 거리를 구해서 그보다 더 멀리 보냄
+                const dist = this.grid.getDistance(caster, t);
+                const pushDist = dist + (eff.area || 1) + 1; // 현재 거리 + 밀어낼 거리(기본1)
+                
+                const dest = this.grid.getHexInDirection(caster, t, pushDist);
+                
                 t.q = dest.q; t.r = dest.r;
                 this.log(`${t.name} 넉백됨!`, 'log-cc');
+                // 넉백 시 흔들림 효과
+                this.triggerShakeAnimation(t);
                 return;
             }
             if (eff.type === 'DMG') this.performAttack(caster, t, eff.mult, "스킬", false, eff.dmgType);
@@ -896,6 +1019,21 @@ export class BattleSystem {
                 t.curHp = Math.min(t.hp, t.curHp + amt);
                 this.showFloatingText(t, `+${amt}`, '#55ff55');
                 this.log(`${t.name} 회복: ${amt}`, 'log-heal');
+            }
+            // [추가] MP 회복 구현
+            else if (eff.type === 'MP_HEAL') {
+                let amt = Math.floor(t.mp * (eff.mult || 0.2)); 
+                t.curMp = Math.min(t.mp, t.curMp + amt);
+                this.showFloatingText(t, `MP +${amt}`, '#55ccff');
+                this.log(`${t.name} MP 회복: ${amt}`, 'log-heal');
+            }
+            // [추가] 쿨타임 감소 구현
+            else if (eff.type === 'cool_down') {
+                const reduce = eff.mult || 1;
+                for (let skId in t.cooldowns) {
+                    if (t.cooldowns[skId] > 0) t.cooldowns[skId] = Math.max(0, t.cooldowns[skId] - reduce);
+                }
+                this.showFloatingText(t, `Cool -${reduce}`, '#ffffaa');
             }
             else if (eff.type === 'PURIFY') {
                 t.buffs = t.buffs.filter(b => EFFECTS[b.type]?.type !== 'debuff');
@@ -1030,8 +1168,7 @@ export class BattleSystem {
             }
         } 
         else if (u && u.team === 1) {
-            // [규칙 적용] 이미 공격/스킬 사용했으면 공격 불가
-            if (this.actions.attacked || this.actions.skilled) {
+            if (this.actions.acted) {
                 this.log("이미 이번 턴에 행동했습니다.", "log-system");
                 return;
             }
@@ -1088,10 +1225,16 @@ export class BattleSystem {
                 unit.curHp = Math.max(0, unit.curHp - dmg);
                 this.showFloatingText(unit, `🩸-${dmg}`, '#ff0000');
             }
+            
+            // 이동 중에도 컨트롤 위치 업데이트
+            if (unit === this.currentUnit) {
+                this.updateFloatingControls();
+            }
+
             await new Promise(resolve => setTimeout(resolve, 150));
         }
         this.isAnimating = false;
-        this.actions.moved = true; // [이동 완료 플래그]
+        this.actions.moved = true; 
         this.calcReachable();
         this.updateStatusPanel();
         if(cb) cb();
@@ -1112,8 +1255,142 @@ export class BattleSystem {
     }
     triggerShakeAnimation(u) { u.shake = 10; }
 
+    // [battle.js] updateFloatingControls (수정됨: 위치 보정 및 절대좌표 사용)
+    updateFloatingControls() {
+        const wrapperId = 'floating-controls';
+        let wrapper = document.getElementById(wrapperId);
+
+        if (!this.currentUnit || this.currentUnit.team !== 0 || this.isProcessingTurn) {
+            if (wrapper) wrapper.remove();
+            return;
+        }
+
+        const pos = this.grid.hexToPixel(this.currentUnit.q, this.currentUnit.r);
+        
+        // [★ 핵심 수정] 캔버스의 화면상 절대 위치를 구해서 더해줌
+        const canvasRect = this.grid.canvas.getBoundingClientRect();
+        
+        // 캔버스 내부 좌표
+        const canvasX = pos.x - this.camera.x;
+        const canvasY = pos.y - this.camera.y;
+
+        // 화면 밖 체크 (캔버스 내부 좌표 기준)
+        if (canvasX < 0 || canvasX > this.grid.canvas.width || canvasY < 0 || canvasY > this.grid.canvas.height) {
+            if (wrapper) wrapper.style.display = 'none';
+            return;
+        }
+
+        if (!wrapper) {
+            wrapper = document.createElement('div');
+            wrapper.id = wrapperId;
+            wrapper.onmousedown = (e) => e.stopPropagation();
+            // document.body에 붙여야 fixed 좌표계가 정확함
+            document.body.appendChild(wrapper); 
+        }
+        
+        wrapper.style.display = 'flex';
+        // 캔버스 오프셋 + 캔버스 내부 좌표
+        wrapper.style.left = (canvasRect.left + canvasX) + 'px';
+        // -75px 정도 위로 (상태이상 아이콘 위)
+        wrapper.style.top = (canvasRect.top + canvasY - 100) + 'px'; 
+        wrapper.style.transform = 'translateX(-50%)'; 
+        wrapper.style.position = 'fixed'; 
+        wrapper.style.zIndex = '9999';
+
+        wrapper.innerHTML = '';
+
+        if (this.currentUnit.skills) {
+            this.currentUnit.skills.forEach(s => {
+                const btnContainer = document.createElement('div');
+                btnContainer.style.position = 'relative';
+
+                const btn = document.createElement('button');
+                // [수정] 아이콘 데이터 방어 로직 (undefined 방지)
+                btn.innerHTML = s.icon || '⚔️'; 
+                btn.className = 'float-btn action';
+                
+                const cd = this.currentUnit.cooldowns[s.id] || 0;
+                const manaLack = this.currentUnit.curMp < s.mp;
+                
+                if (cd > 0 || manaLack) {
+                    btn.classList.add('disabled');
+                }
+
+                const isConfirming = this.confirmingSkill && this.confirmingSkill.id === s.id;
+
+                if (isConfirming) {
+                    btn.style.display = 'none';
+                    const confirmBox = document.createElement('div');
+                    confirmBox.style.display = 'flex';
+                    confirmBox.style.gap = '4px';
+                    
+                    const okBtn = document.createElement('button'); okBtn.innerHTML = '✔'; okBtn.className = 'float-btn confirm';
+                    okBtn.onclick = (e) => { e.stopPropagation(); this.selectedSkill = s; this.tryExecuteSkill(null, null); this.confirmingSkill = null; this.updateFloatingControls(); };
+                    
+                    const noBtn = document.createElement('button'); noBtn.innerHTML = '✖'; noBtn.className = 'float-btn cancel';
+                    noBtn.onclick = (e) => { e.stopPropagation(); this.confirmingSkill = null; this.updateStatusPanel(); this.updateFloatingControls(); };
+                    
+                    confirmBox.appendChild(okBtn); confirmBox.appendChild(noBtn);
+                    btnContainer.appendChild(confirmBox);
+                } else {
+                    btn.onclick = (e) => {
+                        if (cd > 0 || manaLack || this.actions.acted) return;
+                        e.stopPropagation();
+                        // [수정] 스킬 타겟팅 로직 (undefined 방지)
+                        const targetType = s.main?.target || 'ENEMY_SINGLE';
+                        const isNonTargetSkill = ['SELF', 'ALLY_ALL'].includes(targetType) || 
+                                                 (targetType === 'AREA_ENEMY' && (s.main.area||0) >= 99) || 
+                                                 s.rng === 0;
+
+                        if (isNonTargetSkill) {
+                            if (this.confirmingSkill && this.confirmingSkill.id === s.id) { this.confirmingSkill = null; } 
+                            else { this.confirmingSkill = s; }
+                            this.selectedSkill = null;
+                        } else {
+                            this.selectedSkill = (this.selectedSkill && this.selectedSkill.id === s.id) ? null : s;
+                            this.confirmingSkill = null;
+                        }
+                        this.updateStatusPanel();
+                        this.updateFloatingControls();
+                    };
+                }
+
+                // [수정] 툴팁 내용 undefined 방지
+                btnContainer.onmouseenter = (e) => {
+                    const info = `
+                        <div class="tt-title">${s.icon || '⚔️'} ${s.name || '스킬'}</div>
+                        <div class="tt-stat">위력: ${s.main?.mult || 0}x</div>
+                        <div class="tt-stat">사거리: ${s.rng || 0}</div>
+                        <div class="tt-stat" style="color:#aaa; font-size:11px; margin:5px 0;">${s.desc || '설명 없음'}</div>
+                        <hr style="margin:4px 0; border-color:#444;">
+                        <div style="${manaLack?'color:red':''}">MP: ${s.mp || 0}</div>
+                        <div style="${cd>0?'color:red':''}">쿨타임: ${s.cool || 0}턴</div>
+                    `;
+                    this.showTooltip(e, info);
+                    if (!this.selectedSkill && !this.confirmingSkill && !cd && !manaLack) this.hoverSkill = s; 
+                };
+                btnContainer.onmouseleave = () => { this.hideTooltip(); this.hoverSkill = null; };
+
+                if(!isConfirming) btnContainer.appendChild(btn);
+                wrapper.appendChild(btnContainer);
+            });
+        }
+
+        const sep = document.createElement('div');
+        sep.style.width = '1px'; sep.style.height = '24px'; sep.style.background = 'rgba(255,255,255,0.2)'; sep.style.margin = '0 2px';
+        wrapper.appendChild(sep);
+
+        const endBtn = document.createElement('button');
+        endBtn.innerHTML = '⏩'; 
+        endBtn.className = 'float-btn end';
+        endBtn.onclick = () => this.endTurn();
+        endBtn.onmouseenter = (e) => this.showTooltip(e, "<div class='tt-title' style='color:#f88'>턴 종료</div><div>현재 턴을 마칩니다.</div>");
+        endBtn.onmouseleave = () => this.hideTooltip();
+        wrapper.appendChild(endBtn);
+    }
+
     performAttack(atk, def, mult, name, isDrain, type) {
-        if(name !== "스킬") this.actions.attacked = true; 
+        if(name !== "스킬") this.actions.acted = true; 
         
         if (!type) type = atk.atkType;
 
@@ -1220,8 +1497,15 @@ export class BattleSystem {
         }
     }
 
-    // [battle.js] tryExecuteSkill 함수
-    tryExecuteSkill(targetHex, targetUnit) {
+    // [battle.js] tryExecuteSkill (수정됨: 침묵 로직 추가 및 데이터 방어)
+    // [battle.js] tryExecuteSkill 함수 (async 키워드 추가됨)
+    async tryExecuteSkill(targetHex, targetUnit) {
+        // [추가] 침묵 상태 체크
+        if (this.hasStatus(this.currentUnit, 'SILENCE')) {
+            this.log("😶 침묵 상태입니다! 스킬 사용 불가.", "log-cc");
+            return;
+        }
+
         const skill = this.selectedSkill;
         if (!skill) return;
         
@@ -1230,11 +1514,10 @@ export class BattleSystem {
             return;
         }
 
-        // 1. 타겟 자동 보정 (버튼 시전 시)
+        // 1. 타겟 자동 보정
         let effectiveTarget = targetHex;
         
         if (!effectiveTarget) {
-            // 자신, 아군전체, 적전체(99), 사거리0 인 경우 -> 시전자를 기준점으로 설정
             if (['SELF', 'ALLY_ALL'].includes(skill.main.target) || 
                (skill.main.target === 'AREA_ENEMY' && (skill.main.area||0) >= 99) ||
                skill.rng === 0) {
@@ -1251,7 +1534,7 @@ export class BattleSystem {
              return; 
         }
 
-        // 사거리 체크 (Global 스킬은 제외)
+        // 사거리 체크
         if (!isGlobalSkill && skill.main.type !== 'RESURRECT' && effectiveTarget) {
              const dist = this.grid.getDistance(this.currentUnit, effectiveTarget);
              if (dist > skill.rng) { this.log("사거리 밖입니다.", "log-system"); return; }
@@ -1260,7 +1543,7 @@ export class BattleSystem {
         // 3. 실행
         this.currentUnit.curMp -= skill.mp;
         this.currentUnit.cooldowns[skill.id] = skill.cool;
-        this.actions.skilled = true; // 행동 완료 처리
+        this.actions.acted = true; 
         
         if (this.currentUnit.team === 0) {
             this.gainActionXp(this.currentUnit, 10);
@@ -1268,6 +1551,13 @@ export class BattleSystem {
 
         this.log(`${this.currentUnit.name} [${skill.name}] 시전!`, 'log-skill');
         this.showSpeechBubble(this.currentUnit, skill.name);
+
+        // [★ 수정됨] 근접 돌진 애니메이션 (await 사용을 위해 함수가 async여야 함)
+        const isMeleeLike = skill.main.dmgType === 'PHYS' && skill.main.target === 'ENEMY_SINGLE';
+        
+        if (isMeleeLike && targetUnit && targetUnit !== this.currentUnit) {
+            await this.playDashAnimation(this.currentUnit, targetUnit);
+        }
 
         this.processEffect(skill.main, effectiveTarget, targetUnit, this.currentUnit);
         if (skill.sub) {
@@ -1280,7 +1570,7 @@ export class BattleSystem {
         }
         this.updateCursor();
     }
-    
+
     handleDeath(unit) {
         this.log(`☠ ${unit.name} 사망`, 'log-dmg');
         
@@ -1393,6 +1683,7 @@ export class BattleSystem {
                 const dy = pos.y - this.dragStart.y;
                 this.camera.x = this.dragCamStart.x - dx; 
                 this.camera.y = this.dragCamStart.y - dy;
+                this.updateFloatingControls();
             }
         } else {
             const worldX = pos.x + this.camera.x;
@@ -1428,14 +1719,13 @@ export class BattleSystem {
         this.updateCursor();
     }
 
-    // [battle.js] updateStatusPanel 함수 교체
+    // [battle.js] updateStatusPanel (수정: renderUI 호출 보장)
     updateStatusPanel() {
         const p = document.getElementById('bottom-panel');
         if(!this.viewingUnit) { p.innerHTML = '<div style="margin:auto;color:#666">유닛을 선택하세요</div>'; return; }
         
         const u = this.viewingUnit;
         
-        // 스탯 행 생성 헬퍼
         const createRow = (key, label, val, isBase, idPrefix='val') => {
             let btnHtml = '';
             if (isBase && u.team === 0 && u.statPoints > 0) {
@@ -1448,7 +1738,8 @@ export class BattleSystem {
             }
 
             let valClass = 'val-normal';
-            let displayVal = val;
+            
+            let displayVal = Math.floor(Number(val));
             if (key === 'crit' || key === 'eva') displayVal = parseFloat(val).toFixed(1) + '%';
             
             if (!isBase) {
@@ -1474,14 +1765,15 @@ export class BattleSystem {
             ? u.buffs.map(b => `<div class="status-text-item">${b.icon} <b>${b.name}</b>: ${EFFECTS[b.type]?.desc}</div>`).join('') 
             : `<div class="status-text-item" style="color:#666;text-align:center;">상태이상 없음</div>`;
 
-        // [수정됨] 행동 인디케이터 로직 (공격이나 스킬을 썼으면 '행동' 완료 처리)
-        const isActionDone = this.actions.attacked || this.actions.skilled;
+        const isMyTurn = (u === this.currentUnit);
+        const isMoved = isMyTurn ? this.actions.moved : true;
+        const isActed = isMyTurn ? this.actions.acted : true;
 
-       p.innerHTML = `
+        p.innerHTML = `
             <div class="bp-col col-profile">
                 <div class="action-flags">
-                    <div class="flag-pill ${this.actions.moved ? 'done' : 'available'}">이동</div>
-                    <div class="flag-pill ${isActionDone ? 'done' : 'available'}">행동</div>
+                    <div class="flag-pill ${isMoved ? 'done' : 'available'}">이동</div>
+                    <div class="flag-pill ${isActed ? 'done' : 'available'}">행동</div>
                 </div>
 
                 <div class="portrait-lg">${u.icon}</div>
@@ -1528,9 +1820,8 @@ export class BattleSystem {
             </div>
         `;
         
-        if (this.currentUnit.team === 0 && !this.isProcessingTurn) {
-            this.renderUI();
-        }
+        // [수정] 렌더링 호출
+        this.renderUI();
         
         const logFooter = document.getElementById('log-footer');
         if(logFooter) {
@@ -1541,6 +1832,7 @@ export class BattleSystem {
                 });
             };
         }
+        this.updateFloatingControls();
     }
 
     renderPartyList() {
@@ -1618,370 +1910,134 @@ export class BattleSystem {
         };
     }
 
-
+    // [battle.js] renderUI 함수 (스킬 텍스트 수정 적용됨)
     renderUI() {
         const box = document.getElementById('control-panel-grid');
-        if(!box || this.currentUnit.team !== 0) return;
+        if(!box || !this.viewingUnit) return; 
+        
+        const isMyTurn = (this.currentUnit === this.viewingUnit) && (this.currentUnit.team === 0) && !this.isProcessingTurn;
+
         box.innerHTML = '';
-        const header = document.createElement('div'); header.className='bp-header'; header.innerText='스킬';
+        const header = document.createElement('div'); header.className='bp-header'; 
+        header.innerText = isMyTurn ? '스킬 선택' : '스킬 정보 (사용불가)';
         box.appendChild(header);
+        
         const grid = document.createElement('div'); grid.className='skill-grid';
         
-        this.currentUnit.skills.forEach(s => {
-            const btn = document.createElement('div');
-            const cd = this.currentUnit.cooldowns[s.id] || 0;
-            const manaLack = this.currentUnit.curMp < s.mp;
-            
-            // 타겟팅 불필요 스킬 판단 (자신, 아군전체, 적전체99, 사거리0)
-            const isNonTargetSkill = 
-                ['SELF', 'ALLY_ALL'].includes(s.main.target) || 
-                (s.main.target === 'AREA_ENEMY' && (s.main.area||0) >= 99) ||
-                s.rng === 0;
-
-            btn.className = `skill-btn ${this.selectedSkill?.id === s.id ? 'active' : ''} ${cd>0?'disabled':''} ${manaLack?'mana-lack':''}`;
-            btn.innerHTML = `<div class="skill-icon">${s.icon}</div><div class="skill-name">${s.name}</div>`;
-            
-            if(cd > 0) btn.innerHTML += `<div class="cooldown-overlay">${Math.ceil(cd)}</div>`;
-            
-            // [수정됨] 객체 참조 대신 ID로 비교하여 정확도 향상
-            const isConfirming = this.confirmingSkill && this.confirmingSkill.id === s.id;
-
-            if (isConfirming) {
-                // [확인 모드]
-                btn.innerHTML = `
-                    <div class="confirm-overlay">
-                        <div class="confirm-btn">시전</div>
-                        <div class="cancel-btn">취소</div>
-                    </div>`;
+        if (this.viewingUnit.skills) {
+            this.viewingUnit.skills.forEach(s => {
+                const btn = document.createElement('div');
+                const cd = this.viewingUnit.cooldowns[s.id] || 0;
+                const manaLack = this.viewingUnit.curMp < s.mp;
                 
-                // 시전 버튼
-                btn.querySelector('.confirm-btn').onclick = (e) => {
-                    e.stopPropagation();
-                    this.selectedSkill = s; 
-                    this.tryExecuteSkill(null, null); // 타겟 없이 실행
-                    this.confirmingSkill = null;
-                };
+                const targetType = s.main?.target || 'ENEMY_SINGLE';
+                const isNonTargetSkill = ['SELF', 'ALLY_ALL'].includes(targetType) || 
+                    (targetType === 'AREA_ENEMY' && (s.main.area||0) >= 99) || s.rng === 0;
+
+                let btnClass = `skill-btn ${this.selectedSkill?.id === s.id ? 'active' : ''}`;
+                if (!isMyTurn || cd > 0) btnClass += ' disabled';
+                if (manaLack) btnClass += ' mana-lack';
+
+                btn.className = btnClass;
+                // [수정] undefined 방지
+                btn.innerHTML = `<div class="skill-icon">${s.icon || '⚔️'}</div><div class="skill-name">${s.name || '스킬'}</div>`;
                 
-                // 취소 버튼
-                btn.querySelector('.cancel-btn').onclick = (e) => {
-                    e.stopPropagation();
-                    this.confirmingSkill = null;
-                    this.updateStatusPanel();
-                };
-            } else {
-                // [일반 모드]
-                btn.onclick = () => {
-                    // 제약 사항 체크
-                    if(cd > 0 || this.actions.skilled || this.actions.attacked || this.isProcessingTurn) {
-                        return;
-                    }
-                    if(manaLack) { this.log("마나가 부족합니다.", "log-system"); return; }
+                if(cd > 0) btn.innerHTML += `<div class="cooldown-overlay">${Math.ceil(cd)}</div>`;
+                
+                const isConfirming = this.confirmingSkill && this.confirmingSkill.id === s.id;
+
+                if (isMyTurn && isConfirming) {
+                    btn.innerHTML = `
+                        <div class="confirm-overlay">
+                            <div class="confirm-btn">시전</div>
+                            <div class="cancel-btn">취소</div>
+                        </div>`;
                     
-                    if (isNonTargetSkill) {
-                        // 타겟팅 불필요 -> 토글 방식으로 확인창 띄우기
-                        if (this.confirmingSkill && this.confirmingSkill.id === s.id) {
-                            this.confirmingSkill = null;
-                        } else {
-                            this.confirmingSkill = s;
-                        }
-                        this.selectedSkill = null; 
-                        this.updateStatusPanel(); // UI 갱신
-                    } else {
-                        // 일반 타겟팅 모드
-                        this.selectedSkill = (this.selectedSkill && this.selectedSkill.id === s.id) ? null : s;
+                    btn.querySelector('.confirm-btn').onclick = (e) => {
+                        e.stopPropagation();
+                        this.selectedSkill = s; 
+                        this.tryExecuteSkill(null, null);
                         this.confirmingSkill = null;
-                        this.updateCursor();
-                        this.updateStatusPanel(); 
-                    }
-                };
-            }
+                    };
+                    btn.querySelector('.cancel-btn').onclick = (e) => {
+                        e.stopPropagation();
+                        this.confirmingSkill = null;
+                        this.updateStatusPanel();
+                    };
+                } else {
+                    btn.onclick = () => {
+                        if (!isMyTurn || cd > 0 || this.actions.acted || this.isProcessingTurn) return;
+                        if (manaLack) { this.log("마나가 부족합니다.", "log-system"); return; }
+                        
+                        if (isNonTargetSkill) {
+                            if (this.confirmingSkill && this.confirmingSkill.id === s.id) this.confirmingSkill = null;
+                            else this.confirmingSkill = s;
+                            this.selectedSkill = null; 
+                            this.updateStatusPanel(); 
+                        } else {
+                            this.selectedSkill = (this.selectedSkill && this.selectedSkill.id === s.id) ? null : s;
+                            this.confirmingSkill = null;
+                            this.updateCursor();
+                            this.updateStatusPanel(); 
+                        }
+                    };
+                }
 
-            // 툴팁
-            btn.onmouseenter = (e) => {
-                const info = `<div style="font-weight:bold;color:gold">${s.name}</div>
-                <div>${s.desc}</div><hr style="margin:2px 0">
-                <div style="${manaLack?'color:red':''}">MP: ${s.mp} | Cool: ${s.cool}</div>`;
-                this.showTooltip(e, info);
-            };
-            btn.onmouseleave = () => this.hideTooltip();
-            grid.appendChild(btn);
-        });
+                btn.onmouseenter = (e) => {
+                    const info = `
+                        <div class="tt-title">${s.icon || '⚔️'} ${s.name}</div>
+                        <div class="tt-stat">위력: ${s.main?.mult || 0}x</div>
+                        <div class="tt-stat">사거리: ${s.rng} | 범위: ${s.main?.area||0}</div>
+                        <div class="tt-stat" style="color:#aaa; font-size:11px; margin:5px 0;">${s.desc || '설명 없음'}</div>
+                        <hr style="margin:4px 0; border-color:#444;">
+                        <div style="${manaLack?'color:red':''}">소모 MP: ${s.mp}</div>
+                        <div>쿨타임: ${s.cool}턴</div>
+                    `;
+                    this.showTooltip(e, info);
+                };
+                btn.onmouseleave = () => this.hideTooltip();
+                
+                grid.appendChild(btn);
+            });
+        }
         box.appendChild(grid);
         
-        const turnBtn = document.createElement('div');
-        turnBtn.className = 'turn-btn-wrapper';
-        turnBtn.innerHTML = `<div class="turn-btn">턴 종료</div>`;
-        turnBtn.onclick = () => { if(!this.isProcessingTurn) this.endTurn(); };
-        box.appendChild(turnBtn);
-    }
-    // [누락된 함수 1] 하단 스탯 패널 갱신
-    // [battle.js] updateStatusPanel 함수 (이동/행동 2버튼 통합 버전)
-    updateStatusPanel() {
-        const p = document.getElementById('bottom-panel');
-        if(!this.viewingUnit) { p.innerHTML = '<div style="margin:auto;color:#666">유닛을 선택하세요</div>'; return; }
-        
-        const u = this.viewingUnit;
-        
-        // 스탯 행 생성 헬퍼 함수
-        const createRow = (key, label, val, isBase, idPrefix='val') => {
-            let btnHtml = '';
-            // 아군이고 스탯 포인트가 있을 때 + 버튼 표시
-            if (isBase && u.team === 0 && u.statPoints > 0) {
-                const cost = this.getStatCost(u, key);
-                const disabled = u.statPoints < cost ? 'disabled' : '';
-                btnHtml = `<button class="stat-up-btn ${disabled}" 
-                    ${disabled ? '' : `onclick="window.battle.allocateStat('${key}')"`}
-                    onmouseenter="window.battle.handleStatHover(event, '${key}', true)"
-                    onmouseleave="window.battle.hideTooltip()">+</button>`;
-            }
-
-            let valClass = 'val-normal';
-            let displayVal = val;
-            if (key === 'crit' || key === 'eva') displayVal = parseFloat(val).toFixed(1) + '%';
-            
-            // 버프/디버프 상태에 따른 색상 처리
-            if (!isBase) {
-                const currentVal = parseFloat(val);
-                // 기본값(버프제외) 계산
-                const baseVal = this.getDerivedStat(u, key, true);
-                if (!['mov', 'rng', 'hp_max', 'mp_max'].includes(key)) {
-                    if (currentVal > baseVal) valClass = 'val-buff';
-                    else if (currentVal < baseVal) valClass = 'val-debuff';
-                }
-            }
-            const previewSpan = `<span id="prev-${idPrefix==='val'?'':idPrefix+'-'}${key}" class="stat-arrow"></span>`;
-            return `<div class="stat-row">
-                <span class="stat-label">${label}</span>
-                <div class="stat-val-box">
-                    <span id="${idPrefix}-${key}" class="stat-val ${valClass}">${displayVal}</span>
-                    ${previewSpan}
-                    ${btnHtml}
-                </div>
-            </div>`;
-        };
-
-        // 상태이상 텍스트 생성
-        const statusListHtml = u.buffs.length > 0 
-            ? u.buffs.map(b => `<div class="status-text-item">${b.icon} <b>${b.name}</b>: ${EFFECTS[b.type]?.desc}</div>`).join('') 
-            : `<div class="status-text-item" style="color:#666;text-align:center;">상태이상 없음</div>`;
-
-        // [★핵심 수정★] 행동 통합 로직
-        // 공격(attacked)이나 스킬(skilled) 중 하나라도 했으면 '행동'이 끝난 것으로 처리
-        const isActionDone = this.actions.attacked || this.actions.skilled;
-
-       p.innerHTML = `
-            <div class="bp-col col-profile">
-                <div class="action-flags">
-                    <div class="flag-pill ${this.actions.moved ? 'done' : 'available'}">이동</div>
-                    <div class="flag-pill ${isActionDone ? 'done' : 'available'}">행동</div>
-                </div>
-
-                <div class="portrait-lg">${u.icon}</div>
-                <div class="basic-name">${u.name}</div>
-                <div class="basic-lv">Lv.${u.level} ${u.team===0?'(Hero)':'(Enemy)'}</div>
-                <div style="font-size:11px; width:100%; margin-top:5px;">
-                    HP <div class="bar-container" style="height:15px;"><div class="bar-fill hp-fill" style="width:${(u.curHp/u.hp)*100}%"></div><div class="bar-text">${Math.floor(u.curHp)}/${u.hp}</div></div>
-                    MP <div class="bar-container" style="height:10px;"><div class="bar-fill mp-fill" style="width:${(u.curMp/u.mp)*100}%"></div><div class="bar-text" style="font-size:9px;">${Math.floor(u.curMp)}/${u.mp}</div></div>
-                    <div style="height:4px; margin-top:2px; background:#222;"><div style="height:100%; width:${(u.xp/u.maxXp)*100}%; background:#ccc;"></div></div>
-                </div>
-            </div>
-
-            <div class="bp-col col-base">
-                <div class="bp-header">기초 (7스탯)</div>
-                ${createRow('str', '힘 (STR)', this.getStat(u, 'str'), true, 'val-base')}
-                ${createRow('int', '지능 (INT)', this.getStat(u, 'int'), true, 'val-base')}
-                ${createRow('vit', '체력 (VIT)', this.getStat(u, 'vit'), true, 'val-base')}
-                ${createRow('agi', '민첩 (AGI)', this.getStat(u, 'agi'), true, 'val-base')}
-                ${createRow('dex', '숙련 (DEX)', this.getStat(u, 'dex'), true, 'val-base')}
-                ${createRow('vol', '변동 (VOL)', this.getStat(u, 'vol'), true, 'val-base')}
-                ${createRow('luk', '운 (LUK)', this.getStat(u, 'luk'), true, 'val-base')}
-                ${u.statPoints > 0 ? `<div style="text-align:center;color:gold;font-size:11px;margin-top:5px;">PT: ${u.statPoints}</div>` : ''}
-            </div>
-
-            <div class="bp-col col-combat">
-                <div class="bp-header">전투 능력</div>
-                ${createRow('atk_phys', '물리공격', this.getDerivedStat(u,'atk_phys'), false)}
-                ${createRow('atk_mag', '마법공격', this.getDerivedStat(u,'atk_mag'), false)}
-                ${createRow('def', '물리방어', this.getDerivedStat(u,'def'), false)}
-                ${createRow('res', '마법저항', this.getDerivedStat(u,'res'), false)}
-                ${createRow('hit_phys', '물리명중', this.getDerivedStat(u,'hit_phys'), false)}
-                ${createRow('hit_mag', '마법명중', this.getDerivedStat(u,'hit_mag'), false)}
-                ${createRow('crit', '치명타율', this.getDerivedStat(u,'crit'), false)}
-                ${createRow('eva', '회피율', this.getDerivedStat(u,'eva'), false)}
-                ${createRow('tenacity', '상태저항', this.getDerivedStat(u,'tenacity'), false)}
-                ${createRow('spd', '행동속도', this.getDerivedStat(u,'spd'), false)}
-            </div>
-
-            <div class="bp-col col-control" id="control-panel-grid"></div>
-
-            <div class="bp-col col-status">
-                <div class="bp-header">상태</div>
-                <div class="status-list">${statusListHtml}</div>
-            </div>
-        `;
-        
-        // 현재 턴인 아군 유닛이면 스킬 UI 렌더링
-        if (this.currentUnit.team === 0 && !this.isProcessingTurn) {
-            this.renderUI();
-        }
-        
-        const logFooter = document.getElementById('log-footer');
-        if(logFooter) {
-            logFooter.innerHTML = `<button id="btn-surrender" style="width:100%; background:#422; color:#f88; border:1px solid #633; padding:5px; cursor:pointer;">🏳️ 항복하기</button>`;
-            document.getElementById('btn-surrender').onclick = () => {
-                this.gameApp.showConfirm("정말 항복하시겠습니까? (패배 처리, 보상 없음)", () => {
-                    this.gameApp.onBattleEnd(false, true);
-                });
-            };
+        if (isMyTurn) {
+            const turnBtn = document.createElement('div');
+            turnBtn.className = 'turn-btn-wrapper';
+            turnBtn.innerHTML = `<div class="turn-btn">⏩ 턴 종료</div>`;
+            turnBtn.onclick = () => { if(!this.isProcessingTurn) this.endTurn(); };
+            box.appendChild(turnBtn);
+        } else {
+            const placeholder = document.createElement('div');
+            placeholder.className = 'turn-btn-wrapper';
+            placeholder.innerHTML = `<div class="turn-btn" style="background:#222; border-color:#444; color:#666; cursor:default;">대기 중</div>`;
+            box.appendChild(placeholder);
         }
     }
-    // [누락된 함수 1] 하단 스탯 패널 갱신
-    updateStatusPanel() {
-        const p = document.getElementById('bottom-panel');
-        if(!this.viewingUnit) { p.innerHTML = '<div style="margin:auto;color:#666">유닛을 선택하세요</div>'; return; }
-        
-        const u = this.viewingUnit;
-        
-        // 스탯 행 생성 헬퍼 함수
-        const createRow = (key, label, val, isBase, idPrefix='val') => {
-            let btnHtml = '';
-            // 아군이고 스탯 포인트가 있을 때 + 버튼 표시
-            if (isBase && u.team === 0 && u.statPoints > 0) {
-                const cost = this.getStatCost(u, key);
-                const disabled = u.statPoints < cost ? 'disabled' : '';
-                btnHtml = `<button class="stat-up-btn ${disabled}" 
-                    ${disabled ? '' : `onclick="window.battle.allocateStat('${key}')"`}
-                    onmouseenter="window.battle.handleStatHover(event, '${key}', true)"
-                    onmouseleave="window.battle.hideTooltip()">+</button>`;
-            }
-
-            let valClass = 'val-normal';
-            let displayVal = val;
-            if (key === 'crit' || key === 'eva') displayVal = parseFloat(val).toFixed(1) + '%';
-            
-            // 버프/디버프 상태에 따른 색상 처리
-            if (!isBase) {
-                const currentVal = parseFloat(val);
-                // 기본값(버프제외) 계산
-                const baseVal = this.getDerivedStat(u, key, true);
-                if (!['mov', 'rng', 'hp_max', 'mp_max'].includes(key)) {
-                    if (currentVal > baseVal) valClass = 'val-buff';
-                    else if (currentVal < baseVal) valClass = 'val-debuff';
-                }
-            }
-            const previewSpan = `<span id="prev-${idPrefix==='val'?'':idPrefix+'-'}${key}" class="stat-arrow"></span>`;
-            return `<div class="stat-row">
-                <span class="stat-label">${label}</span>
-                <div class="stat-val-box">
-                    <span id="${idPrefix}-${key}" class="stat-val ${valClass}">${displayVal}</span>
-                    ${previewSpan}
-                    ${btnHtml}
-                </div>
-            </div>`;
-        };
-
-        // 상태이상 텍스트 생성
-        const statusListHtml = u.buffs.length > 0 
-            ? u.buffs.map(b => `<div class="status-text-item">${b.icon} <b>${b.name}</b>: ${EFFECTS[b.type]?.desc}</div>`).join('') 
-            : `<div class="status-text-item" style="color:#666;text-align:center;">상태이상 없음</div>`;
-
-       p.innerHTML = `
-            <div class="bp-col col-profile">
-                <div class="action-flags">
-                    <div class="flag-pill ${this.actions.moved?'done':'available'}">이동</div>
-                    <div class="flag-pill ${this.actions.attacked?'done':'available'}">공격</div>
-                    <div class="flag-pill ${this.actions.skilled?'done':'available'}">스킬</div>
-                </div>
-                <div class="portrait-lg">${u.icon}</div>
-                <div class="basic-name">${u.name}</div>
-                <div class="basic-lv">Lv.${u.level} ${u.team===0?'(Hero)':'(Enemy)'}</div>
-                <div style="font-size:11px; width:100%; margin-top:5px;">
-                    HP <div class="bar-container" style="height:15px;"><div class="bar-fill hp-fill" style="width:${(u.curHp/u.hp)*100}%"></div><div class="bar-text">${Math.floor(u.curHp)}/${u.hp}</div></div>
-                    MP <div class="bar-container" style="height:10px;"><div class="bar-fill mp-fill" style="width:${(u.curMp/u.mp)*100}%"></div><div class="bar-text" style="font-size:9px;">${Math.floor(u.curMp)}/${u.mp}</div></div>
-                    <div style="height:4px; margin-top:2px; background:#222;"><div style="height:100%; width:${(u.xp/u.maxXp)*100}%; background:#ccc;"></div></div>
-                </div>
-            </div>
-
-            <div class="bp-col col-base">
-                <div class="bp-header">기초 (7스탯)</div>
-                ${createRow('str', '힘 (STR)', this.getStat(u, 'str'), true, 'val-base')}
-                ${createRow('int', '지능 (INT)', this.getStat(u, 'int'), true, 'val-base')}
-                ${createRow('vit', '체력 (VIT)', this.getStat(u, 'vit'), true, 'val-base')}
-                ${createRow('agi', '민첩 (AGI)', this.getStat(u, 'agi'), true, 'val-base')}
-                ${createRow('dex', '숙련 (DEX)', this.getStat(u, 'dex'), true, 'val-base')}
-                ${createRow('vol', '변동 (VOL)', this.getStat(u, 'vol'), true, 'val-base')}
-                ${createRow('luk', '운 (LUK)', this.getStat(u, 'luk'), true, 'val-base')}
-                ${u.statPoints > 0 ? `<div style="text-align:center;color:gold;font-size:11px;margin-top:5px;">PT: ${u.statPoints}</div>` : ''}
-            </div>
-
-            <div class="bp-col col-combat">
-                <div class="bp-header">전투 능력</div>
-                ${createRow('atk_phys', '물리공격', this.getDerivedStat(u,'atk_phys'), false)}
-                ${createRow('atk_mag', '마법공격', this.getDerivedStat(u,'atk_mag'), false)}
-                ${createRow('def', '물리방어', this.getDerivedStat(u,'def'), false)}
-                ${createRow('res', '마법저항', this.getDerivedStat(u,'res'), false)}
-                ${createRow('hit_phys', '물리명중', this.getDerivedStat(u,'hit_phys'), false)}
-                ${createRow('hit_mag', '마법명중', this.getDerivedStat(u,'hit_mag'), false)}
-                ${createRow('crit', '치명타율', this.getDerivedStat(u,'crit'), false)}
-                ${createRow('eva', '회피율', this.getDerivedStat(u,'eva'), false)}
-                ${createRow('tenacity', '상태저항', this.getDerivedStat(u,'tenacity'), false)}
-                ${createRow('spd', '행동속도', this.getDerivedStat(u,'spd'), false)}
-            </div>
-
-            <div class="bp-col col-control" id="control-panel-grid"></div>
-
-            <div class="bp-col col-status">
-                <div class="bp-header">상태</div>
-                <div class="status-list">${statusListHtml}</div>
-            </div>
-        `;
-        
-        // 현재 턴인 아군 유닛이면 스킬 UI 렌더링
-        if (this.currentUnit.team === 0 && !this.isProcessingTurn) {
-            this.renderUI();
-        }
-        
-        const logFooter = document.getElementById('log-footer');
-        if(logFooter) {
-            logFooter.innerHTML = `<button id="btn-surrender" style="width:100%; background:#422; color:#f88; border:1px solid #633; padding:5px; cursor:pointer;">🏳️ 항복하기</button>`;
-            document.getElementById('btn-surrender').onclick = () => {
-                this.gameApp.showConfirm("정말 항복하시겠습니까? (패배 처리, 보상 없음)", () => {
-                    this.gameApp.onBattleEnd(false, true);
-                });
-            };
-        }
-    }
+    
     async processTextQueue() {
         if(this.textQueue.length > 0) {
             const now = Date.now();
             if (!this.lastTextTime || now - this.lastTextTime > 200) {
                 const {u, txt, col} = this.textQueue.shift();
                 const pos = this.grid.hexToPixel(u.q, u.r);
-                const drawX = pos.x - this.camera.x;
-                const drawY = pos.y - this.camera.y;
+                
+                // [★ 핵심 수정] 캔버스의 화면상 절대 위치를 구해서 더해줌
+                const rect = this.grid.canvas.getBoundingClientRect();
+                const drawX = rect.left + (pos.x - this.camera.x);
+                const drawY = rect.top + (pos.y - this.camera.y);
+                
                 const el = document.createElement('div');
                 el.className = 'floating-text'; el.textContent = txt; el.style.color = col;
                 el.style.left = drawX + 'px'; el.style.top = (drawY - 40) + 'px';
-                document.getElementById('overlay-layer').appendChild(el);
+                el.style.position = 'fixed'; // fixed로 변경
+                el.style.pointerEvents = 'none'; // 클릭 통과
+                document.body.appendChild(el); 
                 setTimeout(() => el.remove(), 1000);
                 this.lastTextTime = now;
             }
         }
         requestAnimationFrame(() => this.processTextQueue());
     }
-
-    createProjectile(start, end) {
-        const sPos = this.grid.hexToPixel(start.q, start.r);
-        const ePos = this.grid.hexToPixel(end.q, end.r);
-        this.projectiles.push({ x:sPos.x, y:sPos.y, tx:ePos.x, ty:ePos.y, t:0, speed:0.1 });
-    }
-    triggerBumpAnimation(u, target) {
-        const s = this.grid.hexToPixel(u.q, u.r);
-        const t = this.grid.hexToPixel(target.q, target.r);
-        const dx = t.x - s.x;
-        const dy = t.y - s.y;
-        u.bumpX = dx * 0.3; 
-        u.bumpY = dy * 0.3;
-    }
-    triggerShakeAnimation(u) { u.shake = 10; }
 }
