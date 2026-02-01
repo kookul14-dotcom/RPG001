@@ -1,0 +1,56 @@
+import { SKILL_DATABASE } from './skills.js';
+
+export const CLASS_DATA = {
+    // ============================================================
+    // HEROES (1/10 Scale, All 17 Skills Added)
+    // ============================================================
+    'WARRIOR': { name: '로덴 그레이', element: 'EARTH', icon: '⚔️', level: 1, hp: 140, mp: 20, str: 20, int: 4, vit: 7, agi: 8, dex: 5, vol: 8, luk: 3, def: 0, spd: 75, mov: 3, rng: 1, skillIds: ['1001','1002','1003','1004','1005','1006','1007','1008','1009','1010','1011','1012','1013','1014','1015','1016','1017'] },
+'KNIGHT': { name: '세라핀', element: 'LIGHT', icon: '🛡️', level: 1, hp: 166, mp: 30, str: 16, int: 6, vit: 10, agi: 7, dex: 8, vol: 2, luk: 2, def: 0, spd: 74, mov: 3, rng: 1, skillIds: ['2001','2002','2003','2004','2005','2006','2007','2008','2009','2010','2011','2012','2013','2014','2015','2016','2017'] },
+'MONK': { name: '다렌', element: 'WIND', icon: '🥋', level: 1, hp: 116, mp: 30, str: 16, int: 6, vit: 5, agi: 11, dex: 7, vol: 4, luk: 4, def: 0, spd: 80, mov: 4, rng: 1, skillIds: ['3001','3002','3003','3004','3005','3006','3007','3008','3009','3010','3011','3012','3013','3014','3015','3016','3017'] },
+'ROGUE': { name: '켈', element: 'DARK', icon: '🗡️', level: 1, hp: 104, mp: 30, str: 14, int: 6, vit: 4, agi: 11, dex: 4, vol: 6, luk: 9, def: 0, spd: 80, mov: 4, rng: 1, skillIds: ['4001','4002','4003','4004','4005','4006','4007','4008','4009','4010','4011','4012','4013','4014','4015','4016','4017'] },
+'ARCHER': { name: '르네', element: 'WIND', icon: '🏹', level: 1, hp: 104, mp: 40, str: 14, int: 8, vit: 4, agi: 10, dex: 12, vol: 2, luk: 4, def: 0, spd: 79, mov: 3, rng: 5, skillIds: ['5001','5002','5003','5004','5005','5006','5007','5008','5009','5010','5011','5012','5013','5014','5015','5016','5017'] },
+'SORCERER': { name: '라이언', element: 'FIRE', icon: '🔮', level: 1, hp: 84, mp: 100, str: 4, int: 20, vit: 3, agi: 6, dex: 4, vol: 10, luk: 3, def: 0, spd: 79, mov: 3, rng: 4, skillIds: ['6001','6002','6003','6004','6005','6006','6007','6008','6009','6010','6011','6012','6013','6014','6015','6016','6017'] },
+'CLERIC': { name: '아벨', element: 'LIGHT', icon: '✝️', level: 1, hp: 138, mp: 80, str: 8, int: 16, vit: 8, agi: 6, dex: 6, vol: 2, luk: 4, def: 0, spd: 77, mov: 3, rng: 3, skillIds: ['7001','7002','7003','7004','7005','7006','7007','7008','7009','7010','7011','7012','7013','7014','7015','7016','7017'] },
+'BARD': { name: '피오나', element: 'WIND', icon: '🎻', level: 1, hp: 96, mp: 75, str: 6, int: 16, vit: 4, agi: 7, dex: 5, vol: 4, luk: 7, def: 0, spd: 80, mov: 3, rng: 4, skillIds: ['8001','8002','8003','8004','8005','8006','8007','8008','8009','8010','8011','8012','8013','8014','8015','8016','8017'] },
+'DANCER': { name: '아리사', element: 'FIRE', icon: '💃', level: 1, hp: 88, mp: 30, str: 8, int: 6, vit: 3, agi: 12, dex: 4, vol: 5, luk: 8, def: 0, spd: 81, mov: 4, rng: 1, skillIds: ['9001','9002','9003','9004','9005','9006','9007','9008','9009','9010','9011','9012','9013','9014','9015','9016','9017'] },
+'ALCHEMIST': { name: '라스', element: 'WATER', icon: '⚗️', level: 1, hp: 98, mp: 85, str: 8, int: 18, vit: 4, agi: 6, dex: 9, vol: 3, luk: 5, def: 0, spd: 78, mov: 3, rng: 3, skillIds: ['10001', '10002', '10003', '10004', '10005', '10006', '10007', '10008', '10009', '10010', '10011', '10012', '10013', '10014', '10015', '10016', '10017'] },
+
+
+    // ============================================================
+    // MONSTERS (30 Types / 1/10 Scale Applied)
+    // ============================================================
+'RAT': { name: '거대쥐', element: 'EARTH', atkType: 'PHYS', level: 1, hp: 50, mp: 0, str: 16, int: 0, vit: 5, agi: 6, dex: 3, vol: 2, luk: 2, def: 0, spd: 80, mov: 3, rng: 1, icon: '🐀', skillIds: ['M001'] },
+    'SLIME': { name: '슬라임', element: 'WATER', atkType: 'PHYS', level: 1, hp: 80, mp: 10, str: 18, int: 0, vit: 10, agi: 2, dex: 2, vol: 2, luk: 2, def: 2, spd: 74, mov: 2, rng: 1, icon: '🟢', skillIds: ['M002'] },
+    'BAT': { name: '흡혈박쥐', element: 'WIND', atkType: 'PHYS', level: 2, hp: 60, mp: 0, str: 20, int: 0, vit: 3, agi: 12, dex: 8, vol: 2, luk: 5, def: 0, spd: 88, mov: 4, rng: 1, icon: '🦇', skillIds: ['M003'] },
+    'KOBOLD': { name: '코볼트', element: 'FIRE', atkType: 'PHYS', level: 2, hp: 90, mp: 20, str: 24, int: 4, vit: 8, agi: 10, dex: 8, vol: 3, luk: 5, def: 3, spd: 85, mov: 3, rng: 1, icon: '🐕', skillIds: ['M004'] },
+    'GOBLIN': { name: '고블린', element: 'WIND', atkType: 'PHYS', level: 3, hp: 100, mp: 10, str: 24, int: 4, vit: 8, agi: 12, dex: 10, vol: 5, luk: 5, def: 2, spd: 84, mov: 3, rng: 1, icon: '👺', skillIds: ['M005'] },
+    'SPIDER': { name: '독거미', element: 'DARK', atkType: 'PHYS', level: 3, hp: 110, mp: 30, str: 28, int: 10, vit: 10, agi: 8, dex: 10, vol: 2, luk: 5, def: 5, spd: 82, mov: 3, rng: 2, icon: '🕷️', skillIds: ['M006'] },
+    'WOLF': { name: '늑대', element: 'WIND', atkType: 'PHYS', level: 4, hp: 130, mp: 0, str: 32, int: 0, vit: 10, agi: 15, dex: 12, vol: 5, luk: 5, def: 3, spd: 90, mov: 4, rng: 1, icon: '🐺', skillIds: ['M007', 'M008'] },
+    'BOAR': { name: '멧돼지', element: 'EARTH', atkType: 'PHYS', level: 4, hp: 180, mp: 0, str: 40, int: 0, vit: 20, agi: 5, dex: 5, vol: 5, luk: 2, def: 8, spd: 77, mov: 5, rng: 1, icon: '🐗', skillIds: ['M009', 'M010'] },
+    'SKELETON': { name: '스켈레톤', element: 'DARK', atkType: 'PHYS', level: 5, hp: 150, mp: 0, str: 36, int: 0, vit: 12, agi: 10, dex: 15, vol: 5, luk: 5, def: 8, spd: 80, mov: 3, rng: 2, icon: '☠️', skillIds: ['M011', 'M012'] },
+    'ZOMBIE': { name: '좀비', element: 'DARK', atkType: 'PHYS', level: 5, hp: 250, mp: 0, str: 40, int: 0, vit: 30, agi: 2, dex: 5, vol: 5, luk: 0, def: 2, spd: 71, mov: 2, rng: 1, icon: '🧟', skillIds: ['M013', 'M014'] },
+    'ORC': { name: '오크', element: 'EARTH', atkType: 'PHYS', level: 6, hp: 300, mp: 10, str: 50, int: 0, vit: 25, agi: 5, dex: 8, vol: 10, luk: 5, def: 10, spd: 77, mov: 3, rng: 1, icon: '👹', skillIds: ['M015', 'M016'] },
+    'BANDIT': { name: '도적', element: 'WIND', atkType: 'PHYS', level: 6, hp: 200, mp: 20, str: 44, int: 10, vit: 15, agi: 20, dex: 25, vol: 10, luk: 15, def: 5, spd: 88, mov: 4, rng: 1, icon: '🥷', skillIds: ['M017', 'M018'] },
+    'BEAR': { name: '불곰', element: 'EARTH', atkType: 'PHYS', level: 7, hp: 450, mp: 0, str: 70, int: 0, vit: 40, agi: 5, dex: 10, vol: 15, luk: 5, def: 15, spd: 74, mov: 3, rng: 1, icon: '🐻', skillIds: ['M019'] },
+    'HARPY': { name: '하피', element: 'WIND', atkType: 'PHYS', level: 7, hp: 220, mp: 50, str: 40, int: 30, vit: 12, agi: 25, dex: 15, vol: 10, luk: 10, def: 5, spd: 92, mov: 5, rng: 1, icon: '🦅', skillIds: ['M020', 'M021'] },
+    'GARGOYLE': { name: '가고일', element: 'EARTH', atkType: 'PHYS', level: 8, hp: 500, mp: 0, str: 60, int: 0, vit: 50, agi: 5, dex: 5, vol: 5, luk: 5, def: 30, spd: 71, mov: 3, rng: 1, icon: '🦇', skillIds: ['M022', 'M023'] },
+    'GHOST': { name: '유령', element: 'DARK', atkType: 'MAG', level: 8, hp: 180, mp: 100, str: 10, int: 80, vit: 10, agi: 20, dex: 10, vol: 5, luk: 20, def: 5, spd: 84, mov: 4, rng: 1, icon: '👻', skillIds: ['M024', 'M025'] },
+    'WEREWOLF': { name: '늑대인간', element: 'WIND', atkType: 'PHYS', level: 9, hp: 550, mp: 50, str: 90, int: 10, vit: 35, agi: 30, dex: 25, vol: 20, luk: 15, def: 10, spd: 93, mov: 5, rng: 1, icon: '🐺', skillIds: ['M026', 'M027'] },
+    'SUCCUBUS': { name: '서큐버스', element: 'DARK', atkType: 'MAG', level: 9, hp: 350, mp: 100, str: 30, int: 80, vit: 20, agi: 20, dex: 20, vol: 10, luk: 25, def: 8, spd: 90, mov: 4, rng: 2, icon: '😈', skillIds: ['M028', 'M029'] },
+    'GOLEM': { name: '골렘', element: 'EARTH', atkType: 'PHYS', level: 10, hp: 1000, mp: 0, str: 120, int: 0, vit: 80, agi: 5, dex: 5, vol: 10, luk: 0, def: 50, spd: 68, mov: 2, rng: 1, icon: '🗿', skillIds: ['M030', 'M031'] },
+    'TROLL': { name: '트롤', element: 'WATER', atkType: 'PHYS', level: 10, hp: 1200, mp: 20, str: 110, int: 10, vit: 90, agi: 5, dex: 10, vol: 20, luk: 5, def: 15, spd: 74, mov: 3, rng: 1, icon: '👺', skillIds: ['M032', 'M033'] },
+    'MINOTAUR': { name: '미노타우루스', element: 'FIRE', atkType: 'PHYS', level: 11, hp: 1100, mp: 30, str: 130, int: 10, vit: 60, agi: 10, dex: 15, vol: 15, luk: 5, def: 20, spd: 77, mov: 4, rng: 1, icon: '🐂', skillIds: ['M034', 'M035'] },
+    'DULLAHAN': { name: '듀라한', element: 'DARK', atkType: 'PHYS', level: 12, hp: 900, mp: 50, str: 140, int: 30, vit: 50, agi: 20, dex: 25, vol: 10, luk: 5, def: 25, spd: 84, mov: 5, rng: 1, icon: '🎃', skillIds: ['M036', 'M037'] },
+    'TREANT': { name: '트리언트', element: 'EARTH', atkType: 'PHYS', level: 13, hp: 1500, mp: 50, str: 150, int: 40, vit: 100, agi: 5, dex: 5, vol: 10, luk: 10, def: 40, spd: 61, mov: 2, rng: 2, icon: '🌳', skillIds: ['M038', 'M039'] },
+    'VAMPIRE': { name: '뱀파이어', element: 'DARK', atkType: 'MAG', level: 14, hp: 800, mp: 100, str: 120, int: 120, vit: 40, agi: 40, dex: 30, vol: 20, luk: 20, def: 20, spd: 96, mov: 5, rng: 2, icon: '🧛', skillIds: ['M027', 'M040'] },
+    'DRAKE': { name: '드레이크', element: 'FIRE', atkType: 'MAG', level: 15, hp: 2000, mp: 100, str: 160, int: 100, vit: 100, agi: 20, dex: 20, vol: 20, luk: 15, def: 30, spd: 87, mov: 4, rng: 2, icon: '🐉', skillIds: ['M041', 'M042'] },
+    'LICH': { name: '리치', element: 'DARK', atkType: 'MAG', level: 16, hp: 1000, mp: 500, str: 40, int: 200, vit: 50, agi: 30, dex: 30, vol: 20, luk: 20, def: 15, spd: 80, mov: 3, rng: 4, icon: '💀', skillIds: ['M043', 'M044'] },
+    'KRAKEN': { name: '크라켄', element: 'WATER', atkType: 'PHYS', level: 17, hp: 2500, mp: 200, str: 180, int: 80, vit: 120, agi: 5, dex: 10, vol: 15, luk: 10, def: 40, spd: 71, mov: 3, rng: 2, icon: '🦑', skillIds: ['M045', 'M046'] },
+    'PHOENIX': { name: '피닉스', element: 'FIRE', atkType: 'MAG', level: 18, hp: 1800, mp: 300, str: 100, int: 180, vit: 60, agi: 50, dex: 35, vol: 30, luk: 40, def: 25, spd: 99, mov: 6, rng: 3, icon: '🦅', skillIds: ['M047', 'M048'] },
+    'BEHEMOTH': { name: '베히모스', element: 'EARTH', atkType: 'PHYS', level: 19, hp: 3500, mp: 50, str: 240, int: 40, vit: 150, agi: 5, dex: 5, vol: 20, luk: 10, def: 80, spd: 68, mov: 3, rng: 1, icon: '🦏', skillIds: ['M049', 'M050'] },
+    'DRAGON': { name: '드래곤', element: 'LIGHT', atkType: 'MAG', level: 20, hp: 5000, mp: 500, str: 300, int: 300, vit: 200, agi: 30, dex: 40, vol: 30, luk: 30, def: 60, spd: 90, mov: 5, rng: 3, icon: '🐲', skillIds: ['M051', 'M052', 'M053'] },
+
+    // 소환물
+    'DECOY': { name: '미끼', element: 'NONE', atkType: 'PHYS', icon: '🤡', level: 1, hp: 50, mp: 0, str:0, int:0, vit:0, agi:0, dex:0, vol:0, luk:0, def:0, spd:10, skillIds: [] },
+    'WALL_STONE': { name: '돌벽', element: 'EARTH', atkType: 'PHYS', icon: '🧱', level: 1, hp: 200, mp: 0, str:0, int:0, vit:0, agi:0, dex:0, vol:0, luk:0, def:50, spd:1, skillIds: [] }
+};

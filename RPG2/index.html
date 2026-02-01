@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>Hex RPG: Legends</title>
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>⚔️</text></svg>">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+    <div id="scene-title" class="scene active">
+        <div class="title-container">
+            <h1 class="game-title">HEX RPG</h1>
+            <p class="click-start">Click to Start</p>
+            <p class="sub-text">(이어하기: 데이터가 있으면 자동 로드)</p>
+        </div>
+    </div>
+
+    <div id="scene-town" class="scene">
+        <div class="town-header">
+            <div class="town-name">🏰 루미나 성 (Lumina Castle)</div>
+            <div class="resource-display">
+                <span id="display-gold">💰 0</span>
+                <span id="display-faith">✨ 0</span>
+            </div>
+        </div>
+        <div class="town-content">
+            <div class="town-grid">
+                <div class="town-btn" id="btn-battle">
+                    <div class="btn-icon">⚔️</div>
+                    <div class="btn-text">전장</div>
+                </div>
+                <div class="town-btn" id="btn-hero">
+                    <div class="btn-icon">🛡️</div>
+                    <div class="btn-text">영웅 관리</div>
+                </div>
+                <div class="town-btn" id="btn-tavern">
+                    <div class="btn-icon">🍺</div>
+                    <div class="btn-text">선술집</div>
+                </div>
+                <div class="town-btn" id="btn-blacksmith">
+                    <div class="btn-icon">⚒️</div>
+                    <div class="btn-text">대장간</div>
+                </div>
+                <div class="town-btn" id="btn-inn">
+                    <div class="btn-icon">🛏️</div>
+                    <div class="btn-text">여관</div>
+                </div>
+                <div class="town-btn" id="btn-sanctuary">
+                    <div class="btn-icon">🙏</div>
+                    <div class="btn-text">성소</div>
+                </div>
+                <div class="town-btn danger" id="btn-reset">
+                    <div class="btn-icon">⚠️</div>
+                    <div class="btn-text">초기화</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="scene-stage-select" class="scene">
+        <div class="sub-header">
+            <h2>전장 선택</h2>
+            <button class="close-btn" id="btn-town-return-1">나가기</button>
+        </div>
+        <div class="chapter-list" id="chapter-list"></div>
+        <div class="stage-list" id="stage-list"></div>
+    </div>
+
+    <div id="scene-battle-prep" class="scene" style="background:rgba(0,0,0,0.98); flex-direction:column;">
+        <div class="prep-header">
+            <h2 id="prep-title" style="color:gold; font-family: 'Orbitron'; margin:0; font-size: 20px;">BATTLE PREPARATION</h2>
+            <button class="close-btn" onclick="game.closePrep()">나가기</button>
+        </div>
+
+        <div class="prep-container">
+            <div class="prep-top-row">
+                <div class="prep-col-left prep-panel">
+                    <div class="panel-header">DEPLOYED (Select Leader)</div>
+                    <div id="prep-deployed-list" class="deployed-list"></div> 
+                    <div style="padding:10px; font-size:11px; color:#666; text-align:center; border-top:1px solid #333;">
+                        클릭하여 <span style="color:gold">리더(👑)</span> 설정
+                    </div>
+                </div>
+
+                <div class="prep-col-center">
+                    <div class="prep-map-wrapper">
+                        <div id="prep-minimap" class="minimap-grid-layer"></div>
+                        <div style="position:absolute; left:50%; top:5%; bottom:5%; width:0; border-left:1px dashed rgba(255,255,255,0.2); pointer-events:none;"></div>
+                        <div style="position:absolute; bottom:10px; left:20%; color:#48f; font-size:12px; font-weight:bold; opacity:0.5; pointer-events:none;">아군 진영</div>
+                        <div style="position:absolute; bottom:10px; right:20%; color:#f44; font-size:12px; font-weight:bold; opacity:0.5; pointer-events:none;">적군 진영</div>
+                    </div>
+                    <div style="height:30px; display:flex; align-items:center; justify-content:center; gap:20px; background:#111; border-top:1px solid #333;">
+                        <div style="font-size:12px; color:#aaa;">배치 인원: <span id="prep-count" style="color:gold; font-weight:bold;">0 / 6</span></div>
+                    </div>
+                </div>
+
+                <div class="prep-col-right prep-panel">
+                    <div class="panel-header">ENEMY INTEL</div>
+                    <div id="prep-enemy-list" class="enemy-list"></div>
+                    <div id="prep-tip" style="padding:10px; font-size:11px; color:#aaa; border-top:1px solid #333; background:#181818;"></div>
+                </div>
+            </div>
+
+            <div class="prep-bottom-row prep-panel">
+                <div class="panel-header">MY HERO ROSTER (드래그하여 미니맵에 배치하세요)</div>
+                <div id="prep-roster" class="roster-scroll-area"></div>
+            </div>
+        </div>
+
+        <div class="prep-footer">
+            <button class="prep-btn auto" onclick="game.autoFormParty()">⚡ 자동 편성</button>
+            <button class="prep-btn" onclick="game.clearParty()">🗑️ 모두 제거</button>
+            <button class="prep-btn start" onclick="game.confirmBattleStart()">⚔️ 전투 시작</button>
+        </div>
+    </div>
+
+    <div id="scene-battle" class="scene">
+        <div id="game-frame">
+            <div id="sidebar-left" class="panel">
+                <div class="panel-header">PARTY STATUS</div>
+                <div id="party-list" style="overflow-y: auto; flex: 1;"></div>
+            </div>
+            
+            <div id="viewport">
+                <canvas id="gridCanvas"></canvas>
+                <div id="overlay-layer"></div>
+                <div id="zoom-hint">🖱️ Wheel to Zoom</div>
+            </div>
+            
+            <div id="sidebar-right" class="panel">
+                <div class="panel-header">COMBAT LOG</div>
+                <div id="log-box"><div id="log-content"></div></div>
+                <div id="log-footer" style="padding:5px; border-top:1px solid #444; text-align:center;"></div>
+            </div>
+            
+            <div id="bottom-panel" class="panel"></div>
+        </div>
+        
+        <div id="skill-panel"></div>
+
+        <div id="battle-result-modal" class="modal">
+            <div class="modal-content">
+                <h2 id="battle-result-title">VICTORY!</h2>
+                <p id="battle-result-desc">Reward: 100 G</p>
+                <div class="modal-btns"></div>
+            </div>
+        </div>
+    </div>
+
+    <div id="scene-sub-menu" class="scene">
+        <div class="sub-header">
+            <div style="display:flex; align-items:center; gap:20px;">
+                <h2 id="sub-menu-title" style="margin:0;">MENU</h2>
+                <span id="sub-menu-gold" style="color:gold; font-weight:bold; font-size:18px;">💰 0</span>
+            </div>
+            <button class="close-btn" id="btn-sub-close">나가기</button>
+        </div>
+        <div id="sub-menu-content" class="sub-content"></div>
+    </div>
+
+    <div id="system-modal" class="modal-overlay" style="display:none;">
+        <div class="system-modal-box">
+            <div class="sys-msg" id="sys-modal-msg">메시지</div>
+            <div class="sys-btns" id="sys-modal-btns"></div>
+        </div>
+    </div>
+
+    <div id="global-tooltip" class="tooltip-box"></div>
+
+    <script type="module" src="js/main.js"></script>
+</body>
+</html>
