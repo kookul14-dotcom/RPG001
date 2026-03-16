@@ -1,0 +1,1607 @@
+/* 중세풍 우아한 영문(Cinzel)과 고전적인 한글 세리프체(Nanum Myeongjo) 로드 */
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;700&family=Nanum+Myeongjo:wght@400;700;800&display=swap');
+
+:root {
+    /* 양피지 & 고목나무 웜톤 팔레트 */
+    --gold: #b8860b;             /* 빛바랜 고대 황금색 */
+    --panel-bg: #e8dcc4;         /* 양피지 텍스처 베이스 색상 */
+    --item-bg: #d4bc96;          /* 조금 더 진한/탄 종이 색상 */
+    --border-dim: #5d4037;       /* 짙은 고목나무/가죽 색상 */
+    
+    /* 폰트: 사이버펑크(Orbitron)에서 중세 판타지(Cinzel)로 전면 교체 */
+    --font-main: 'Nanum Myeongjo', serif; 
+    --font-game: 'Cinzel', serif;         
+    
+    /* 잉크 및 포인트 컬러 */
+    --danger: #8b0000;           /* 피/밀랍 인장 색상 */
+    --success: #2e7d32;          /* 허브/독초 색상 */
+    --text-ink: #2d1e17;         /* 진한 갈색 잉크 (가독성 향상) */
+    --wood-dark: #3e2723;        /* 묵직한 나무 테두리 */
+}
+
+/* =========================================
+   1. GLOBAL & RESET
+   ========================================= */
+* { box-sizing: border-box; }
+body { 
+    margin: 0; padding: 0; overflow: hidden; 
+    /* 네온 블랙을 제거하고 양피지 질감 패턴 적용 */
+    background-color: #ebd9b4;
+    background-image: radial-gradient(circle at center, transparent 0%, rgba(139, 90, 43, 0.15) 100%),
+                      url('data:image/svg+xml;utf8,<svg opacity="0.08" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><filter id="n"><feTurbulence type="fractalNoise" baseFrequency="0.7"/></filter><rect width="100" height="100" filter="url(%23n)"/></svg>');
+    color: var(--text-ink); 
+    font-family: var(--font-main); user-select: none; 
+}
+button { font-family: var(--font-game); }
+
+/* =========================================
+   2. CURSORS
+   ========================================= */
+#viewport {
+    cursor: default;
+    position: relative;
+    overflow: hidden;
+    background: #1c140d; /* 전장은 어둡고 무거운 흙빛 유지 */
+    border: 3px solid var(--border-dim);
+}
+#viewport.cursor-attack {
+    cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" filter="drop-shadow(2px 2px 2px rgba(139,0,0,0.6))"><path d="M24 4l4 4-2 2 2 2-2 2-2-2-2 2 2 2-12 12-4-4 12-12 2 2-2-2 2-2-2-2 2-2z" fill="%23d4bc96" stroke="%233e2723" stroke-width="1.5"/><path d="M6 26l-4 4 4-4-2-2z" fill="%238b0000"/></svg>') 2 28, crosshair !important;
+}
+#viewport.cursor-skill { cursor: crosshair !important; }
+#viewport.cursor-move { cursor: grabbing !important; }
+
+/* =========================================
+   3. SCENE SYSTEM
+   ========================================= */
+.scene { 
+    position: absolute; top:0; left:0; width:100vw; height:100vh; 
+    background: var(--bg-parchment); display:none; z-index:10; 
+}
+.scene.active { display:flex; flex-direction:column; }
+
+/* Title Scene (낡은 가죽 책 표지 느낌) */
+#scene-title { 
+    background: radial-gradient(circle at center, #5d4037, #2d1e17, #1c140d);
+    align-items:center; justify-content:center; cursor:pointer; 
+}
+.game-title { 
+    font-family: var(--font-game); font-size:90px; color: var(--gold); 
+    text-shadow: 2px 4px 10px rgba(0,0,0,0.8), 0 0 5px rgba(184, 134, 11, 0.4); margin:0; 
+    letter-spacing: 5px;
+}
+.click-start { 
+    font-size:20px; color: #d4bc96; margin-top:30px; 
+    font-family: var(--font-main);
+    animation:blink 2s infinite; 
+}
+.sub-text { color:#8b5a2b; font-size:12px; margin-top:50px; }
+@keyframes blink { 50% { opacity:0.4; } }
+
+/* =========================================
+   4. WORLD MAP (NEW)
+   ========================================= */
+#scene-stage-select {
+    background: url('data:image/svg+xml;utf8,<svg opacity="0.05" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><filter id="n"><feTurbulence type="fractalNoise" baseFrequency="0.5"/></filter><rect width="100" height="100" filter="url(%23n)"/></svg>'), linear-gradient(to bottom, #d4bc96, #ebd9b4);
+}
+
+#world-map-container {
+    width: 100%; height: 100%; display: flex; flex-direction: column;
+    align-items: center; padding: 40px 0; overflow-y: auto; position: relative;
+}
+
+/* World Map Nodes (지도 위의 거점/오브젝트) */
+.world-node {
+    transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    box-shadow: 2px 4px 8px rgba(45,30,23,0.5); /* 묵직한 가죽 그림자 */
+    position: relative; z-index: 10;
+    border-radius: 2px; /* 둥근 UI 배제 */
+}
+
+.world-node:hover:not(.locked) {
+    transform: translateY(-5px) scale(1.05);
+    box-shadow: 4px 8px 15px rgba(139,90,43,0.6);
+    z-index: 20;
+}
+
+/* Town Node on Map */
+.world-node.town {
+    animation: glowPulse 3s infinite alternate;
+}
+@keyframes glowPulse {
+    from { box-shadow: 0 0 10px rgba(184, 134, 11, 0.3); border-color: var(--wood-dark); }
+    to { box-shadow: 0 0 20px rgba(184, 134, 11, 0.8); border-color: var(--gold); }
+}
+
+/* Stage Nodes */
+.world-node.stage { position: relative; }
+.world-node.stage.locked {
+    filter: sepia(100%) opacity(0.5); /* 흑백 대신 세피아톤 */
+    pointer-events: none;
+    border-color: #5d4037 !important;
+}
+
+/* =========================================
+   5. TOWN MENU (SIMPLIFIED)
+   ========================================= */
+#scene-sub-menu {
+    background: rgba(28, 20, 13, 0.85); /* 따뜻한 다크 브라운 오버레이 */
+    align-items: center; justify-content: center;
+}
+
+.sub-menu-content {
+    background: var(--panel-bg);
+    border: 4px double var(--border-dim); /* 고전적인 이중 테두리 */
+    border-radius: 2px;
+    box-shadow: 5px 10px 30px rgba(0,0,0,0.8), inset 0 0 20px rgba(93,64,55,0.2);
+    width: auto; min-width: 600px; max-height: 90vh;
+    overflow-y: auto; padding: 30px;
+}
+
+#scene-sub-menu .sub-menu-content button {
+    transition: 0.2s;
+    background: var(--wood-dark);
+    border: 2px solid var(--border-dim);
+    color: #ebd9b4;
+    font-family: var(--font-game);
+    border-radius: 2px;
+    box-shadow: 2px 4px 6px rgba(0,0,0,0.5);
+    margin-bottom: 10px; text-transform: uppercase; letter-spacing: 1px;
+}
+
+#scene-sub-menu .sub-menu-content button:hover {
+    background: var(--border-dim);
+    border-color: var(--gold);
+    color: var(--gold);
+    transform: translateX(5px);
+    box-shadow: -2px 5px 10px rgba(0,0,0,0.6);
+}
+
+/* =========================================
+   6. BATTLE UI LAYOUT
+   ========================================= */
+#game-frame { 
+    position: relative; /* 자식 요소들의 공중부양 기준점 */
+    display: block; /* 불필요한 그리드(격자) 분할을 해제하고 전체 화면 사용 */
+    width: 100%; height: 100%; background: #1c140d; 
+}
+
+.panel { 
+    background: var(--panel-bg); 
+    border: 2px solid var(--wood-dark); 
+    box-shadow: inset 0 0 15px rgba(93,64,55,0.4); 
+    display:flex; flex-direction:column; position:relative; overflow:hidden; 
+    color: var(--text-ink);
+}
+.panel-header { 
+    background: var(--wood-dark); 
+    padding:8px; text-align:center; font-weight:bold; border-bottom:2px solid var(--border-dim); 
+    color: var(--gold); font-size:14px; flex-shrink: 0; font-family: var(--font-game); 
+    text-shadow: 1px 1px 2px #000;
+}
+
+/* 좌우 정보창을 완전히 화면에서 띄워(absolute) 양쪽 하단에 배치합니다 */
+#sidebar-left { position: absolute; bottom: 20px; left: 20px; z-index: 99999; border: none; }
+#sidebar-right { position: absolute; bottom: 20px; right: 20px; z-index: 99999; border: none; }
+
+/* 뷰포트(전장 지도)가 잘리지 않고 화면 100%를 꽉 채우도록 확장 */
+#viewport { width: 100%; height: 100%; }
+
+/* 과거에 쓰던 낡은 하단 중앙 패널은 완전히 숨김(삭제) 처리하여 겹치지 않게 만듭니다 */
+#bottom-panel { 
+    display: none !important; 
+}
+
+#gridCanvas { display:block; width: 100%; height: 100%; }
+#overlay-layer { position:absolute; top:0; left:0; width:100%; height:100%; pointer-events:none; }
+#zoom-hint { position: absolute; bottom: 10px; right: 10px; color: rgba(235, 217, 180, 0.6); font-size: 12px; pointer-events: none; }
+
+/* =========================================
+   7. BATTLE SIDEBARS
+   ========================================= */
+.party-unit { 
+    border-bottom: 1px dashed var(--border-dim); margin-bottom: 5px; background: rgba(212, 188, 150, 0.5); 
+    transition: background 0.2s; cursor: pointer; padding: 5px; color: var(--text-ink);
+}
+.party-unit:hover { background: rgba(184, 134, 11, 0.2); }
+.party-unit.active-turn { border-left: 4px solid var(--danger); background: rgba(184, 134, 11, 0.3); }
+.party-unit.viewing { border: 1px solid var(--border-dim); box-shadow: inset 0 0 5px rgba(0,0,0,0.2); }
+
+/* Log (오래된 전투 기록지 느낌) */
+#log-box { flex: 1; overflow-y: auto; font-size: 13px; background: var(--item-bg); border-top: 2px solid var(--border-dim); }
+#log-content { padding: 8px; display: flex; flex-direction: column; gap: 4px; }
+.log-entry { padding: 3px 5px; border-radius: 2px; line-height: 1.5; border-left: 2px solid transparent; font-family: var(--font-main); color: var(--wood-dark); }
+.log-entry.log-turn { background: rgba(93, 64, 55, 0.1); border-left-color: var(--wood-dark); color: #000; font-weight: bold; margin-top: 5px; font-family: var(--font-game); }
+.log-entry.log-dmg { color: var(--danger); font-weight: bold; }
+.log-entry.log-heal { color: var(--success); font-weight: bold; }
+.log-entry.log-cc { color: #5e35b1; background: rgba(94, 53, 177, 0.05); }
+.log-entry.log-skill { color: #b8860b; font-weight: bold; }
+.log-entry.log-system { color: #5d4037; font-style: italic; }
+
+/* =========================================
+   8. BATTLE BOTTOM PANEL
+   ========================================= */
+.bp-col { padding:8px; border-right:1px solid var(--border-dim); display:flex; flex-direction:column; overflow-y:auto; scrollbar-width:thin; }
+.bp-header { font-size:12px; font-weight:bold; color: var(--wood-dark); border-bottom:2px solid var(--border-dim); margin-bottom:5px; padding-bottom:4px; font-family: var(--font-game); letter-spacing: 1px; }
+
+/* Layout Columns */
+.col-profile { width: 140px; align-items:center; background: rgba(93,64,55,0.05); flex-shrink: 0; }
+.col-base { width: 160px; background: rgba(93,64,55,0.1); flex-shrink: 0; } 
+.col-combat { width: 180px; background: rgba(93,64,55,0.05); flex-shrink: 0; }
+.col-status { flex: 1; background: var(--panel-bg); }
+
+/* Profile Elements */
+.portrait-lg { font-size:40px; background:var(--item-bg); border-radius:2px; width:64px; height:64px; display:flex; align-items:center; justify-content:center; border:2px solid var(--wood-dark); margin-bottom:5px; box-shadow: 2px 2px 4px rgba(0,0,0,0.3); }
+.basic-name { font-weight:bold; color:var(--ink-black); font-size:15px; margin-bottom:2px; font-family: var(--font-main); }
+.basic-lv { font-size:12px; color:var(--wood-light); margin-bottom:5px; }
+
+/* Bars */
+.bar-container { background: #3e2723; border-radius:2px; overflow:hidden; width:100%; margin-top:4px; position:relative; border: 1px solid #1a110a; }
+.bar-fill { height:100%; transition:width 0.3s; }
+.hp-fill { background: linear-gradient(90deg, #8b0000, #b22222); } 
+.mp-fill { background: linear-gradient(90deg, #0d47a1, #1976d2); } 
+.xp-fill { background: linear-gradient(90deg, #5d4037, #8d6e63); } 
+.bar-text { font-size:10px; color:#f4ebd8; text-align:center; position:absolute; top:50%; transform: translateY(-50%); width:100%; text-shadow:1px 1px 0 #000; line-height:1; font-weight: bold; font-family: var(--font-game); }
+
+/* Stats */
+.stat-row { display:flex; align-items:center; justify-content: space-between; font-size:12px; margin-bottom:3px; height:20px; border-bottom: 1px dotted rgba(93,64,55,0.3); }
+.stat-label { color:var(--wood-dark); cursor:help; font-family: var(--font-main); font-weight:bold; }
+.stat-val { font-weight:bold; color:var(--danger); font-family: var(--font-game); min-width: 25px; text-align: right; }
+.val-buff { color:var(--success) !important; }
+.val-debuff { color:var(--danger) !important; }
+
+/* Status Icons */
+.status-detail-item { display: flex; align-items: center; gap: 10px; background: rgba(93, 64, 55, 0.1); border: 1px solid var(--border-dim); padding: 8px; margin-bottom: 6px; border-radius: 2px; width: 100%; }
+.st-name { font-size: 13px; font-weight: bold; color: var(--danger); font-family: var(--font-main); }
+.st-desc { font-size: 11px; color: var(--ink-black); line-height: 1.4; }
+
+/* =========================================
+   9. SKILL PANEL
+   ========================================= */
+.col-skills {
+    flex: 1.5; display: flex; flex-direction: column;
+    background: var(--panel-bg); border-right: 1px solid var(--border-dim); min-width: 220px;
+}
+.skill-grid-container {
+    flex: 1; display: grid; grid-template-columns: repeat(auto-fill, minmax(60px, 1fr)); 
+    grid-auto-rows: 60px; gap: 6px; padding: 10px; overflow-y: auto;
+}
+.skill-btn { 
+    background: var(--item-bg); 
+    border: 2px solid var(--border-dim); border-radius: 2px; color: var(--wood-dark); 
+    display: flex; flex-direction: column; align-items: center; justify-content: center; 
+    cursor: pointer; position: relative; transition: 0.1s; box-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+}
+.skill-btn:hover { border-color: var(--danger); background: #e8dcc4; }
+.skill-btn.active { border-color: var(--danger); box-shadow: 0 0 8px rgba(139,0,0,0.5); background: #f4ebd8; }
+.skill-btn.locked { opacity: 0.5; filter: sepia(100%); cursor: not-allowed; }
+.skill-btn.mana-lack { opacity: 0.8; background: #a89f91; border-color: #5d4037; }
+.skill-btn.weapon-mismatch { border-color: #8b0000; background: #cfa89c; opacity: 0.7; cursor: not-allowed; }
+
+.skill-footer {
+    height: 55px; display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 15px; border-top: 2px solid var(--border-dim); background: rgba(93,64,55,0.1);
+}
+.turn-btn { 
+    width: 90px; height: 38px; background: var(--wood-dark); 
+    color: #ebd9b4; border: 2px solid #2d1e17; border-radius: 2px; cursor: pointer; 
+    font-weight: bold; font-size: 12px; font-family: var(--font-game); text-shadow: 1px 1px 1px #000;
+}
+.turn-btn:hover { background: #5d4037; border-color: var(--gold); color: #fff; }
+
+/* =========================================
+   10. HUD (Floating Controls)
+   ========================================= */
+#floating-controls {
+    position: fixed; z-index: 9999;
+    display: flex; flex-direction: row; align-items: flex-start; gap: 5px;
+    pointer-events: auto; transition: opacity 0.2s; transform: translate(-50%, -100%);
+}
+.hud-hidden { opacity: 0 !important; pointer-events: none !important; }
+
+.float-skill-grid {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; padding: 4px;
+    background: var(--panel-bg); border: 2px solid var(--wood-dark); border-radius: 2px;
+    width: 140px; height: 46px; overflow-y: hidden; box-shadow: 2px 4px 8px rgba(0,0,0,0.5);
+}
+.float-skill-btn {
+    width: 38px; height: 38px; background: var(--item-bg); border: 1px solid var(--border-dim); border-radius: 2px;
+    cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 20px;
+}
+.float-skill-btn.active { border-color: var(--danger); background: #f4ebd8; }
+
+.float-end-btn {
+    width: 38px; height: 38px; background: var(--danger);
+    border: 2px solid #500; border-radius: 2px; color: #f4ebd8; cursor: pointer; margin-top: 4px;
+    box-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+}
+
+/* =========================================
+   11. BATTLE OVERLAYS
+   ========================================= */
+.unit-overlay { position: absolute; transform: translate(-50%, -50%); pointer-events: none; width: 0; height: 0; }
+.bar-group { position: absolute; bottom: 35px; left: 50%; transform: translateX(-50%); width: 44px; display: flex; flex-direction: column; gap: 1px; }
+.hp-row { display: flex; width: 100%; height: 5px; background: #3e2723; border: 1px solid #1a110a; }
+.hp-fill { background: #b22222; height: 100%; transition: width 0.2s; }
+.name-tag {
+    position: absolute; top: 25px; left: 50%; transform: translateX(-50%);
+    background: rgba(45, 30, 23, 0.9); color: #ebd9b4; font-size: 10px; padding: 2px 5px; 
+    border-radius: 2px; white-space: nowrap; border: 1px solid #1a110a; z-index: 20;
+    font-family: var(--font-main); font-weight: bold;
+}
+.turn-highlight-circle {
+    position: absolute; top: 20px; left: 0; width: 50px; height: 30px;
+    border: 3px solid var(--danger); border-radius: 50%; transform: translate(-50%, -50%);
+    box-shadow: 0 0 15px rgba(139,0,0,0.8), inset 0 0 5px rgba(139,0,0,0.5); z-index: -1; animation: pulseBorder 1.5s infinite;
+}
+
+.floating-text { 
+    position: absolute; font-weight: 900; font-size: 14px; pointer-events: none; z-index: 9999999; 
+    text-shadow: 1px 1px 0 #1a110a, -1px -1px 0 #1a110a, 1px -1px 0 #1a110a, -1px 1px 0 #1a110a, 2px 3px 5px rgba(0,0,0,0.6); 
+    white-space: nowrap; transform: translate(-50%, -50%);
+    animation: smoothFloatUp 2.5s ease-out forwards !important; font-family: var(--font-game);
+}
+
+@keyframes smoothFloatUp {
+    0%   { transform: translate(-50%, 0) scale(0.5); opacity: 0; }
+    4%   { transform: translate(-50%, -15px) scale(1.2); opacity: 1; }
+    8%   { transform: translate(-50%, -20px) scale(1); opacity: 1; } 
+    80%  { transform: translate(-50%, -35px) scale(1); opacity: 1; }
+    100% { transform: translate(-50%, -45px) scale(1); opacity: 0; } 
+}
+
+/* Stage Title Overlay (고서 양식 타이틀) */
+#stage-title-overlay {
+    position: absolute; top: 30%; left: 0; width: 100%; text-align: center;
+    pointer-events: none; opacity: 0; transition: opacity 1s ease-in-out;
+    z-index: 1000; color: var(--gold); text-shadow: 2px 4px 6px rgba(0,0,0,0.9);
+}
+#stage-title-overlay.show { opacity: 1; animation: slideUp 0.5s ease-out; }
+#stage-main-title { font-size: 54px; margin: 0; font-family: var(--font-game); letter-spacing: 8px; border-bottom: 2px solid var(--danger); display: inline-block; padding-bottom: 10px;}
+#stage-sub-title { font-size: 20px; margin: 10px 0 0 0; color: #d4bc96; letter-spacing: 3px; font-family: var(--font-main); }
+
+/* =========================================
+   12. TOOLTIPS & MODALS
+   ========================================= */
+#global-tooltip {
+    position: absolute; z-index: 10000; background: rgba(45, 30, 23, 0.98);
+    border: 2px solid var(--gold); padding: 12px; color: #ebd9b4; border-radius: 2px;
+    font-size: 13px; pointer-events: none; user-select: none; display: none;
+    box-shadow: 4px 6px 15px rgba(0,0,0,0.8); max-width: 300px; top: 0; left: 0;
+    font-family: var(--font-main);
+}
+
+.modal { position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(28, 20, 13, 0.85); z-index:100; display:none; align-items:center; justify-content:center; }
+.modal-content { background: var(--panel-bg); border: 4px double var(--wood-dark); padding:30px; text-align:center; border-radius:2px; min-width:320px; color: var(--text-ink); box-shadow: 0 10px 30px rgba(0,0,0,0.8); }
+.modal-btns button { margin:10px; padding:10px 20px; font-size:16px; cursor:pointer; background: var(--wood-dark); color: #ebd9b4; border: 2px solid var(--border-dim); font-family: var(--font-game); border-radius: 2px; }
+.modal-btns button:hover { background: var(--danger); border-color: #500; }
+
+/* =========================================
+   13. MANAGEMENT (PARTY & HERO) - 양피지 테마 덮어쓰기
+   ========================================= */
+.luxury-modal-container {
+    display: flex; flex-direction: column;
+    background: var(--panel-bg);
+    border: 5px solid var(--wood-dark);
+    border-radius: 2px;
+    box-shadow: 10px 10px 30px rgba(0,0,0,0.8), inset 0 0 40px rgba(93,64,55,0.3);
+    overflow: hidden; width: 100%; max-width: 1100px; height: 85vh; min-height: 700px;
+}
+.party-modal-box.luxury {
+    background: var(--panel-bg); border: 4px solid var(--wood-dark); border-radius: 2px;
+    box-shadow: 10px 10px 30px rgba(0,0,0,0.8);
+}
+.party-header-luxury {
+    height: 80px; background: var(--wood-dark); border-bottom: 3px solid var(--border-dim);
+    display: flex; justify-content: space-between; align-items: center; padding: 0 30px;
+}
+.ph-title h2 { margin: 0; color: var(--gold); font-family: var(--font-game); }
+.nav-btn { background: var(--item-bg); border: 2px solid var(--border-dim); color: var(--text-ink); padding: 8px 16px; cursor: pointer; border-radius: 2px; font-family: var(--font-game); font-weight: bold; }
+.nav-btn:hover { border-color: var(--danger); color: var(--danger); }
+
+.party-content-luxury { flex: 1; display: flex; flex-direction: column; padding: 20px; gap: 20px; }
+.party-slots-container {
+    display: flex; justify-content: center; gap: 15px; padding: 20px;
+    background: rgba(93,64,55,0.1); border-radius: 2px; border: 2px dashed var(--border-dim);
+}
+.party-slot-card {
+    width: 130px; height: 180px; background: var(--item-bg); border: 2px dashed var(--border-dim);
+    border-radius: 2px; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    cursor: pointer; transition: 0.3s; position: relative; color: var(--text-ink); box-shadow: 2px 2px 5px rgba(0,0,0,0.2);
+}
+.party-slot-card.filled { border: 2px solid var(--wood-dark); background: #f4ebd8; border-style: solid; }
+.party-slot-card.filled:hover { border-color: var(--danger); transform: translateY(-5px); }
+.leader-badge { position: absolute; top: -10px; background: var(--danger); color: #fff; font-weight: bold; font-size: 10px; padding: 3px 10px; border-radius: 2px; font-family: var(--font-game); border: 1px solid #500; }
+.slot-icon-area { font-size: 40px; margin-bottom: 10px; }
+.slot-name { font-weight: bold; color: var(--wood-dark); font-size: 14px; text-align: center; font-family: var(--font-main); }
+
+.party-lower-section { flex: 1; overflow-y: auto; background: rgba(93,64,55,0.05); border-radius: 2px; padding: 15px; border: 1px solid var(--border-dim); }
+.roster-grid-luxury { display: grid; grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); gap: 10px; }
+.roster-mini-card { 
+    background: var(--item-bg); border: 2px solid var(--border-dim); border-radius: 2px; padding: 10px; 
+    display: flex; flex-direction: column; align-items: center; cursor: pointer; transition: 0.2s; color: var(--text-ink);
+}
+.roster-mini-card:hover { border-color: var(--danger); background: #f4ebd8; transform: scale(1.05); box-shadow: 2px 4px 8px rgba(0,0,0,0.3); }
+
+/* Hero Manager Layout */
+.manage-container { display: grid; grid-template-columns: 220px 360px 460px; gap: 15px; height: 85vh; padding: 10px; width: 100%; max-width: 1400px; }
+.col-header { font-family: var(--font-game); background: var(--wood-dark); color: var(--gold); padding: 12px; border-bottom: 2px solid var(--border-dim); font-size: 15px; text-align: center; letter-spacing: 1px; }
+.col-body { flex:1; padding:15px; overflow-y:auto; scrollbar-width:thin; }
+
+.hero-list-item { display:flex; align-items:center; gap:10px; padding:10px; margin-bottom:8px; background: var(--item-bg); border:2px solid var(--border-dim); border-radius:2px; cursor:pointer; color: var(--text-ink); }
+.hero-list-item:hover { background: #e8dcc4; border-color: var(--danger); }
+.hero-list-item.selected { background: #f4ebd8; border-color: var(--danger); box-shadow:inset 4px 0 0 var(--danger); }
+
+.equipment-layout { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.equip-slot-modern { 
+    height: 60px; background: rgba(93,64,55,0.1); border: 2px dashed var(--border-dim); border-radius: 2px; 
+    display: flex; align-items: center; padding: 5px; gap: 10px; cursor: pointer; 
+}
+.equip-slot-modern.filled { border:2px solid var(--wood-dark); background: var(--item-bg); border-style: solid; }
+.slot-bg-icon { width:40px; height:40px; border-radius:2px; display:flex; align-items:center; justify-content:center; font-size:24px; color: var(--wood-light); opacity: 0.4; filter: sepia(100%); }
+.filled .slot-bg-icon { border: 1px solid var(--wood-dark); background: var(--bg-parchment); color:var(--wood-dark); opacity: 1; filter: none; }
+
+/* =========================================
+   14. BATTLE PREP UI
+   ========================================= */
+.prep-header { width:100%; height:55px; display:flex; justify-content:space-between; align-items:center; padding:0 20px; border-bottom:3px solid var(--border-dim); background: var(--wood-dark); z-index: 10; color: #ebd9b4; font-family: var(--font-game); }
+.prep-container { flex:1; display:flex; flex-direction:column; width:100%; max-width:1600px; padding:15px; gap:15px; overflow:hidden; margin: 0 auto; position: relative; }
+.prep-top-row { display: flex; flex: 1; gap: 15px; overflow: hidden; min-height: 0; }
+.prep-panel { background: var(--panel-bg); border:3px solid var(--wood-dark); border-radius:2px; display:flex; flex-direction:column; overflow:hidden; position:relative; box-shadow: 4px 4px 10px rgba(0,0,0,0.3); }
+.prep-col-left { width: 240px; display: flex; flex-direction: column; }
+
+/* Deployed List */
+.deployed-list { flex:1; overflow-y:auto; padding:12px; display:flex; flex-direction:column; gap:10px; }
+.deployed-card { display: flex; align-items: center; gap: 10px; background: var(--item-bg); border: 2px solid var(--border-dim); padding: 10px; border-radius: 2px; cursor: pointer; color: var(--wood-dark); font-weight: bold; font-family: var(--font-main); }
+.deployed-card.active-leader { border: 2px solid var(--danger); background: #f4ebd8; box-shadow: 0 2px 5px rgba(139,0,0,0.3); }
+
+/* Mini Map (고지도 스타일 배경) */
+.prep-col-center { flex: 1; display: flex; flex-direction: column; background: var(--item-bg); border: 4px double var(--border-dim); }
+.prep-map-wrapper { flex: 1; position: relative; overflow: hidden; display: flex; justify-content: center; align-items: center; background: url('data:image/svg+xml;utf8,<svg opacity="0.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><filter id="n"><feTurbulence type="fractalNoise" baseFrequency="0.4"/></filter><rect width="100" height="100" filter="url(%23n)"/></svg>') var(--bg-parchment); box-shadow: inset 0 0 40px rgba(93,64,55,0.4); }
+.hex-tile { position: absolute; width: 40px; height: 44px; clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%); display: flex; justify-content: center; align-items: center; transition: 0.2s; border: 1px solid rgba(93,64,55,0.3); }
+.hex-tile.zone-ally { background-color: rgba(46, 125, 50, 0.3); border: 2px dashed #2e7d32; cursor: pointer; }
+.hex-tile.zone-ally:hover { background-color: rgba(46, 125, 50, 0.6); }
+.hex-tile.drag-valid { background-color: rgba(184, 134, 11, 0.5) !important; z-index: 5; }
+.hex-unit { position: absolute; width: 36px; height: 40px; z-index: 10; clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%); display: flex; justify-content: center; align-items: center; font-size: 20px; cursor: grab; filter: drop-shadow(2px 2px 3px rgba(0,0,0,0.6)); }
+.hex-unit.hero { background: #d4bc96; border: 2px solid var(--success); }
+.hex-unit.enemy { background: #cfa89c; border: 2px solid var(--danger); pointer-events: none; }
+
+/* Prep Footer & Roster */
+.prep-bottom-row { height: 140px; display: flex; flex-direction: column; }
+.roster-scroll-area { flex: 1; display: flex; align-items: center; gap: 15px; overflow-x: auto; padding: 12px 20px; background: rgba(93,64,55,0.1); border-top: 3px solid var(--wood-dark); }
+.roster-card-h { min-width: 110px; height: 100px; background: var(--item-bg); border: 2px solid var(--border-dim); border-radius: 2px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: grab; color: var(--wood-dark); box-shadow: 2px 2px 5px rgba(0,0,0,0.2); }
+.roster-card-h:hover { background: #f4ebd8; border-color: var(--danger); transform: translateY(-3px); box-shadow: 2px 5px 10px rgba(139,0,0,0.3); }
+.roster-card-h.deployed { opacity: 0.5; filter: sepia(100%); pointer-events: none; border-style: dashed; }
+
+.prep-footer { height:60px; display:flex; justify-content:center; align-items:center; gap:25px; background: var(--wood-dark); border-top:2px solid #2d1e17; }
+.prep-btn { padding:10px 30px; font-size:15px; font-family: var(--font-game); cursor:pointer; border-radius:2px; font-weight:bold; border:2px solid var(--border-dim); background: var(--item-bg); color: var(--wood-dark); text-shadow: none; box-shadow: 2px 2px 0 #1a110a; transition: 0.1s; }
+.prep-btn:active { transform: translate(2px, 2px); box-shadow: 0 0 0 #1a110a; }
+.prep-btn:hover { background: #e8dcc4; border-color: var(--gold); }
+.prep-btn.start { background: var(--danger); color: #ebd9b4; border-color: #500; font-size:18px; padding:10px 60px; letter-spacing: 2px; }
+.prep-btn.start:hover { background: #a00; transform: scale(1.02); }
+
+/* Skill Button in Prep */
+#prep-skill-btn, #btn-prep-skill {
+    background: var(--item-bg); color: var(--wood-dark); border: 2px solid var(--border-dim); border-radius: 2px;
+    font-weight: bold; box-shadow: 2px 2px 0 #1a110a; cursor: pointer;
+}
+#prep-skill-btn:hover, #btn-prep-skill:hover {
+    background: #e8dcc4; border-color: var(--gold);
+}
+
+/* =========================================
+   15. SHOP UI STYLES & VILLAGE (양피지 적용)
+   ========================================= */
+.shop-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 15px; padding: 15px; overflow-y: auto; }
+.shop-item {
+    background: var(--item-bg); border: 2px solid var(--border-dim); border-radius: 2px; padding: 15px;
+    display: flex; flex-direction: column; align-items: center; justify-content: space-between;
+    min-height: 250px; box-shadow: 2px 4px 6px rgba(0,0,0,0.2); position: relative; transition: all 0.2s ease;
+    color: var(--text-ink); font-family: var(--font-main);
+}
+.shop-item:hover { border-color: var(--danger); transform: translateY(-3px); box-shadow: 4px 8px 15px rgba(139,0,0,0.2); background: #f4ebd8; }
+.shop-item .icon-area { font-size: 44px; margin-bottom: 12px; filter: drop-shadow(2px 2px 2px rgba(0,0,0,0.3)); }
+.shop-item .name-area { font-weight: bold; color: var(--wood-dark); font-size: 15px; text-align: center; margin-bottom: 6px; height: 38px; display: flex; align-items: center; justify-content: center; }
+.shop-item .info-area { font-size: 12px; color: #5d4037; margin-bottom: 12px; text-align: center; }
+.shop-item .price-area { color: var(--danger); font-weight: bold; font-size: 16px; margin-bottom: 12px; font-family: var(--font-game); }
+.shop-item .buy-btn { width: 100%; padding: 10px; border: 2px solid var(--wood-dark); background: var(--item-bg); color: var(--wood-dark); border-radius: 2px; cursor: pointer; font-weight: bold; transition: 0.2s; font-family: var(--font-game); box-shadow: 2px 2px 0 var(--border-dim); }
+.shop-item .buy-btn:active { transform: translate(2px,2px); box-shadow: 0 0 0 transparent; }
+.shop-item .buy-btn:hover { background: var(--wood-dark); border-color: var(--danger); color: #ebd9b4; }
+.shop-item.sold-out { opacity: 0.6; filter: sepia(100%); pointer-events: none; border-style: dashed; }
+
+.shop-container { display: flex; width: 100%; height: 100%; overflow: hidden; }
+.shop-section-buy { flex: 2; border-right: 3px solid var(--wood-dark); display: flex; flex-direction: column; background: rgba(93,64,55,0.05); }
+.shop-section-sell { flex: 1; display: flex; flex-direction: column; background: rgba(93,64,55,0.1); min-width: 320px; }
+.shop-header-row { padding: 15px 20px; background: rgba(93,64,55,0.1); border-bottom: 2px solid var(--border-dim); display: flex; justify-content: space-between; align-items: center; font-family: var(--font-main); }
+.shop-header-title { font-size: 16px; font-weight: bold; color: var(--wood-dark); display: flex; align-items: center; gap: 10px; }
+
+.shop-list-grid { flex: 1; padding: 20px; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 15px; align-content: start; }
+.shop-item-card { background: var(--item-bg); border: 2px solid var(--border-dim); border-radius: 2px; padding: 12px; display: flex; flex-direction: column; gap: 8px; transition: 0.2s; position: relative; color: var(--text-ink); box-shadow: 2px 2px 5px rgba(0,0,0,0.1); }
+.shop-item-card:hover { border-color: var(--danger); background: #f4ebd8; transform: translateY(-2px); box-shadow: 3px 5px 10px rgba(139,0,0,0.2); }
+.shop-item-card.sold-out { opacity: 0.5; filter: sepia(100%); pointer-events: none; border-style: dashed; }
+
+.sic-top { display: flex; align-items: center; gap: 10px; border-bottom: 1px dotted var(--border-dim); padding-bottom: 8px; margin-bottom: 4px; }
+.sic-icon { width: 50px; height: 50px; background: var(--panel-bg); border: 2px solid var(--border-dim); border-radius: 2px; display: flex; align-items: center; justify-content: center; font-size: 28px; box-shadow: inset 0 0 5px rgba(0,0,0,0.2); }
+.sic-info { flex: 1; overflow: hidden; }
+.sic-name { font-size: 14px; font-weight: bold; color: var(--wood-dark); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sic-type { font-size: 11px; color: #5d4037; }
+.sic-stat { font-size: 12px; color: var(--ink-black); display: flex; justify-content: space-between; font-weight: bold; }
+.sic-price { margin-top: auto; display: flex; justify-content: space-between; align-items: center; padding-top: 8px; border-top: 1px dotted var(--border-dim); }
+.price-tag { color: var(--danger); font-weight: bold; font-size: 15px; font-family: var(--font-game); }
+.sic-btn { background: var(--wood-dark); border: 2px solid #2d1e17; color: #ebd9b4; padding: 6px 14px; border-radius: 2px; cursor: pointer; font-size: 12px; font-family: var(--font-game); box-shadow: 2px 2px 0 rgba(0,0,0,0.3); }
+.sic-btn:active { transform: translate(2px,2px); box-shadow: 0 0 0 transparent; }
+.sic-btn:hover { background: var(--danger); color: #fff; border-color: #500; }
+
+.sell-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; padding: 20px; overflow-y: auto; }
+.sell-slot { aspect-ratio: 1/1; background: var(--item-bg); border: 2px dashed var(--border-dim); border-radius: 2px; display: flex; align-items: center; justify-content: center; font-size: 28px; cursor: pointer; position: relative; transition: 0.2s; box-shadow: inset 0 0 10px rgba(93,64,55,0.2); }
+.sell-slot.has-item { border-style: solid; background: #f4ebd8; }
+.sell-slot.has-item:hover { border-color: var(--danger); box-shadow: 0 0 10px rgba(139,0,0,0.2); transform: scale(1.05); }
+.sell-slot .sell-price-hint { position: absolute; bottom: -8px; right: -5px; font-size: 10px; color: #ebd9b4; background: var(--danger); padding: 2px 6px; border-radius: 2px; pointer-events: none; border: 1px solid #500; font-family: var(--font-game); font-weight: bold; box-shadow: 1px 1px 3px rgba(0,0,0,0.5); }
+
+/* =========================================
+   16. 스탯 업 (+) 버튼 스타일 수정
+========================================= */
+.stat-up-btn {
+    background: var(--item-bg); border: 2px solid var(--border-dim); color: var(--wood-dark);
+    width: 20px; height: 20px; line-height: 16px; padding: 0; margin-left: 6px; 
+    border-radius: 2px; font-family: var(--font-main); font-size: 14px; font-weight: bold;
+    cursor: pointer; transition: all 0.2s ease; box-shadow: 1px 1px 0 rgba(0,0,0,0.3);
+}
+.stat-up-btn:hover { border-color: var(--danger); color: var(--danger); background: #f4ebd8; transform: scale(1.1); }
+.stat-up-btn:active { transform: translate(1px, 1px) scale(0.95); box-shadow: 0 0 0 transparent; background: #e8dcc4; }
+
+/* =========================================================
+   ★ JS 인라인 하드코딩 스타일 강제 오버라이드 (핵심 해결책) ★ 
+   - 근본적인 리팩토링 전까지 화면이 깨지지 않게 보정합니다.
+========================================================= */
+[style*="background:#111"], [style*="background: #111"],
+[style*="background:#1a1a1a"], [style*="background: #1a1a1a"],
+[style*="background:#151515"], [style*="background: #151515"],
+[style*="background:#151518"], [style*="background: #151518"],
+[style*="background:#0a0a0a"], [style*="background: #0a0a0a"],
+[style*="background:#181818"], [style*="background: #181818"],
+[style*="background: #1a1210"], [style*="background:#1a1210"],
+[style*="background:rgba(26, 18, 16, 0.98)"] {
+    background: var(--panel-bg) !important;
+    border-color: var(--border-dim) !important;
+}
+
+[style*="color:#fff"], [style*="color: #fff"],
+[style*="color:#eee"], [style*="color: #eee"],
+[style*="color:#ccc"], [style*="color: #ccc"],
+[style*="color:#ddd"], [style*="color: #ddd"],
+[style*="color:#d7ccc8"], [style*="color: #d7ccc8"],
+[style*="color:#bcaaa4"], [style*="color: #bcaaa4"] {
+    color: var(--text-ink) !important;
+}
+
+[style*="color:gold"], [style*="color: gold"],
+[style*="color:#ffca28"], [style*="color: #ffca28"],
+[style*="color:#ffd700"], [style*="color: #ffd700"] {
+    color: var(--danger) !important; /* 중세 분위기에 맞춰 골드보다 붉은 잉크/다크 우드로 치환 */
+}
+
+[style*="border: 1px solid #333"], [style*="border:1px solid #333"],
+[style*="border: 1px solid #444"], [style*="border:1px solid #444"],
+[style*="border: 1px solid #5d4037"], [style*="border:1px solid #5d4037"] {
+    border-color: var(--border-dim) !important;
+    border-width: 2px !important; /* 양피지 경계를 더 두껍게 */
+}
+
+/* SF 폰트를 강제로 클래식 영문으로 변경 */
+[style*="font-family:'Orbitron'"], [style*="font-family: 'Orbitron'"] {
+    font-family: var(--font-game) !important;
+}
+
+/* 툴팁 양피지화 */
+[style*="background:rgba(20,15,10,0.95)"] {
+    background: var(--bg-parchment) !important;
+    border: 3px double var(--wood-dark) !important;
+    color: var(--text-ink) !important;
+}
+/* =========================================
+   [추가] TownSystem.js 분리형 클래스 (양피지/중세 테마)
+   ========================================= */
+/* Shop (상점) */
+.shop-date-hint { font-size: 11px; color: var(--wood-light); font-weight: normal; margin-left: 10px; font-family: var(--font-main); }
+.shop-refresh-group { display: flex; align-items: center; gap: 10px; }
+.shop-refresh-btn { background: var(--wood-dark); color: #ebd9b4; border: 2px solid var(--border-dim); border-radius: 2px; padding: 6px 10px; cursor: pointer; font-size: 12px; font-weight: bold; font-family: var(--font-game); transition: 0.2s; box-shadow: 2px 2px 0 #1a110a; }
+.shop-refresh-btn:active { transform: translate(2px, 2px); box-shadow: none; }
+.shop-refresh-btn:hover { background: var(--danger); border-color: var(--gold); color: #fff; }
+.daily-reset-hint { font-size: 12px; color: var(--wood-dark); font-family: var(--font-game); font-weight: bold; }
+.shop-gold-display { color: var(--danger); font-weight: bold; font-family: var(--font-game); font-size: 16px; }
+.sell-header { background: rgba(93, 64, 55, 0.1) !important; border-bottom: 2px dotted var(--border-dim) !important; }
+.sell-tip-box { margin-top: auto; padding: 15px; text-align: center; color: var(--wood-dark); font-size: 12px; border-top: 2px solid var(--border-dim); font-family: var(--font-main); font-weight: bold; }
+.tip-title { margin-bottom: 5px; color: var(--gold); font-family: var(--font-game); }
+.empty-stock-msg { grid-column: 1 / -1; text-align: center; padding: 50px; color: var(--border-dim); font-weight: bold; }
+
+/* 텍스트 컬러 (공용) */
+.ts-txt-danger { color: var(--danger); font-weight: bold; }
+.ts-txt-success { color: var(--success); font-weight: bold; }
+.ts-txt-injured { color: #b8860b; font-weight: bold; }
+.ts-txt-atk { color: #8b0000; font-weight: bold; font-family: var(--font-game); }
+.ts-txt-def { color: #2c3e50; font-weight: bold; font-family: var(--font-game); }
+.ts-txt-sold { color: var(--danger); font-weight: bold; font-family: var(--font-game); }
+.ts-txt-hp { color: #8b0000; }
+.ts-txt-mp { color: #0d47a1; }
+
+/* Tavern (선술집) */
+.tavern-renown { color: var(--danger); font-weight: bold; font-size: 16px; font-family: var(--font-main); margin: 10px 0; }
+.tavern-renown span { color: var(--gold); font-family: var(--font-game); }
+.cost-tag { background: var(--wood-dark); border: 2px solid var(--border-dim); color: #ebd9b4; padding: 4px 10px; border-radius: 2px; font-family: var(--font-game); box-shadow: 2px 2px 0 #1a110a; }
+
+/* Inn (여관) */
+.inn-header-box { text-align: center; margin-bottom: 15px; background: rgba(93, 64, 55, 0.1); padding: 20px; border-radius: 2px; border: 2px dashed var(--border-dim); flex-shrink: 0; box-shadow: inset 0 0 10px rgba(0,0,0,0.5); }
+.inn-title { color: var(--gold); font-family: var(--font-game); margin: 0 0 10px 0; letter-spacing: 2px; text-shadow: 2px 2px 4px #000; font-size: 28px; }
+.inn-desc { color: var(--text-ink); font-size: 14px; margin-bottom: 10px; font-family: var(--font-main); font-style: italic; }
+.inn-gold-display { font-weight: bold; color: var(--danger); font-size: 18px; font-family: var(--font-game); margin-bottom: 10px; }
+.inn-heal-all-btn { margin-top: 10px; padding: 12px 25px; background: var(--success); border: 2px solid #1b4b1e; color: #ebd9b4; font-weight: bold; border-radius: 2px; cursor: pointer; font-size: 14px; box-shadow: 2px 2px 0 #1a110a; font-family: var(--font-game); transition: 0.2s; }
+.inn-heal-all-btn:active { transform: translate(2px, 2px); box-shadow: none; }
+.inn-heal-all-btn:hover { background: #388e3c; border-color: var(--gold); color: #fff; }
+.inn-heal-all-msg { margin-top: 10px; padding: 10px; color: var(--success); font-weight: bold; font-family: var(--font-main); }
+.inn-hero-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 15px; overflow-y: auto; flex: 1; padding-right: 5px; scrollbar-width: thin; }
+.inn-hero-card { border: 2px solid transparent; border-radius: 2px; padding: 15px; display: flex; flex-direction: column; gap: 12px; box-shadow: 2px 4px 6px rgba(0,0,0,0.3); transition: 0.2s; }
+.inn-hero-card.dead { filter: sepia(80%) grayscale(50%); border-color: var(--danger); background: rgba(139,0,0,0.1); }
+.inn-hero-card.injured { border-color: #b8860b; background: rgba(184,134,11,0.1); }
+.inn-hero-card.healthy { border-color: var(--border-dim); background: var(--item-bg); }
+.inn-hero-row { display: flex; align-items: center; gap: 15px; }
+.inn-hero-icon { font-size: 40px; width: 64px; height: 64px; background: var(--panel-bg); border-radius: 2px; border: 2px solid var(--border-dim); display: flex; align-items: center; justify-content: center; box-shadow: inset 0 0 10px rgba(0,0,0,0.5); }
+.inn-hero-info { flex: 1; }
+.inn-hero-name-row { font-size: 16px; font-weight: bold; color: var(--wood-dark); display: flex; justify-content: space-between; font-family: var(--font-main); }
+.inn-hero-lv { font-size: 12px; color: var(--text-ink); }
+.inn-hero-status-row { font-size: 12px; color: var(--wood-dark); margin-bottom: 8px; font-family: var(--font-main); }
+.inn-bar-label { font-size: 11px; display: flex; justify-content: space-between; margin-bottom: 2px; font-family: var(--font-game); font-weight: bold; }
+.inn-btn-wrapper { margin-top: auto; }
+.inn-btn { padding: 10px; border-radius: 2px; cursor: pointer; font-weight: bold; width: 100%; transition: 0.2s; font-family: var(--font-game); box-shadow: 2px 2px 0 #1a110a; }
+.inn-btn:active { transform: translate(2px,2px); box-shadow: none; }
+.inn-btn.revive { background: var(--wood-dark); color: var(--danger); border: 2px solid var(--danger); }
+.inn-btn.revive:hover { background: var(--danger); color: #fff; }
+.inn-btn.heal { background: var(--wood-dark); color: var(--success); border: 2px solid var(--success); }
+.inn-btn.heal:hover { background: var(--success); color: #fff; }
+.inn-btn:disabled { background: rgba(93,64,55,0.2); color: var(--border-dim); border: 2px solid rgba(93,64,55,0.3); cursor: not-allowed; box-shadow: none; }
+
+/* Portal (포탈) */
+.portal-empty-msg { text-align: center; padding: 50px; color: var(--border-dim); font-family: var(--font-main); font-weight: bold; line-height: 1.5; }
+.portal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 15px; padding: 20px; }
+.ts-portal-btn { background: var(--wood-dark) !important; border: 2px solid var(--border-dim) !important; border-radius: 2px !important; color: #ebd9b4 !important; padding: 15px !important; cursor: pointer; display: flex !important; flex-direction: column; align-items: center; gap: 8px; box-shadow: 4px 6px 10px rgba(0,0,0,0.5) !important; transition: 0.2s !important; font-family: var(--font-game) !important; }
+.ts-portal-btn:hover { transform: translateY(-3px) !important; background: var(--danger) !important; border-color: var(--gold) !important; color: #fff !important; box-shadow: 4px 8px 15px rgba(139,0,0,0.5) !important; }
+.portal-icon { font-size: 24px; filter: drop-shadow(2px 2px 2px rgba(0,0,0,0.5)); }
+.portal-text { font-weight: bold; font-size: 15px; letter-spacing: 1px; }
+
+/* Destiny Selection (초기 스킬 선택) */
+.destiny-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(28, 20, 13, 0.95); z-index: 9999; display: flex; flex-direction: column; align-items: center; justify-content: center; font-family: var(--font-game); }
+.destiny-container { width: 85%; height: 85%; overflow: hidden; display: flex; flex-direction: column; background: var(--panel-bg); border: 5px double var(--wood-dark); border-radius: 2px; box-shadow: 0 0 30px rgba(0,0,0,0.8), inset 0 0 40px rgba(93,64,55,0.4); position: relative; }
+.destiny-close-btn { position: absolute; top: 15px; right: 20px; background: none; border: none; color: var(--border-dim); font-size: 30px; cursor: pointer; z-index: 10; transition: 0.2s; }
+.destiny-close-btn:hover { color: var(--danger); transform: scale(1.1); }
+.destiny-header { padding: 25px; text-align: center; border-bottom: 3px solid var(--border-dim); background: rgba(93,64,55,0.1); flex-shrink: 0; }
+.destiny-title { color: var(--gold); margin: 0 0 10px 0; text-shadow: 2px 2px 4px #000; font-size: 36px; letter-spacing: 2px; border-bottom: 2px solid var(--danger); display: inline-block; padding-bottom: 10px;}
+.destiny-desc { color: var(--text-ink); margin: 10px 0 0 0; font-family: var(--font-main); font-size: 16px; font-weight: bold; }
+.destiny-grid-wrapper { flex: 1; overflow-y: auto; padding: 25px; }
+.destiny-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 20px; }
+.destiny-skill-card { background: var(--item-bg); border: 2px solid var(--border-dim); border-radius: 2px; padding: 20px; cursor: pointer; transition: all 0.2s; position: relative; display: flex; flex-direction: column; align-items: center; text-align: center; min-height: 200px; box-shadow: 4px 6px 10px rgba(0,0,0,0.3); }
+.destiny-skill-card:hover { transform: translateY(-3px); box-shadow: 4px 8px 15px rgba(0,0,0,0.4); border-color: var(--danger); }
+.destiny-skill-card.selected { border-color: var(--danger); background: #f4ebd8; transform: scale(1.05); box-shadow: 0 0 20px rgba(139,0,0,0.3); }
+.destiny-card-icon { font-size: 40px; margin-bottom: 15px; filter: drop-shadow(2px 2px 2px rgba(0,0,0,0.3)); }
+.destiny-card-name { font-weight: bold; color: var(--wood-dark); font-size: 16px; margin-bottom: 8px; }
+.destiny-card-desc { font-size: 13px; color: var(--text-ink); line-height: 1.4; margin-bottom: auto; font-family: var(--font-main); }
+.destiny-card-req { font-size: 12px; color: var(--danger); margin-top: 15px; width: 100%; border-top: 1px dotted var(--border-dim); padding-top: 8px; font-weight: bold; }
+.check-mark { position: absolute; top: 10px; right: 15px; color: var(--danger); font-size: 24px; display: none; font-weight: bold; }
+.destiny-skill-card.selected .check-mark { display: block; }
+.destiny-footer { padding: 20px; text-align: center; border-top: 3px solid var(--border-dim); background: rgba(93,64,55,0.1); flex-shrink: 0; }
+.destiny-confirm-btn { padding: 15px 50px; font-size: 20px; font-weight: bold; border-radius: 2px; border: 2px solid var(--border-dim); background: var(--item-bg); color: var(--wood-light); cursor: not-allowed; transition: all 0.3s; box-shadow: 2px 4px 6px rgba(0,0,0,0.3); font-family: var(--font-game); }
+.destiny-confirm-btn.active { background: var(--danger); color: #ebd9b4; border-color: #500; cursor: pointer; transform: scale(1.05); box-shadow: 2px 4px 10px rgba(139,0,0,0.5); }
+.destiny-confirm-btn.active:hover { background: #8b0000; color: #fff; }
+
+/* NPC Panel */
+.ts-npc-panel { position: absolute; display: flex; align-items: flex-end; pointer-events: none; z-index: 1000; right: 20px; top: auto; bottom: 0; }
+.ts-npc-bubble { background: var(--panel-bg); color: var(--text-ink); padding: 18px 25px; border-radius: 2px; font-weight: bold; font-size: 16px; margin-bottom: 300px; margin-right: 20px; box-shadow: 4px 8px 15px rgba(0,0,0,0.6); max-width: 320px; position: relative; opacity: 0; transition: opacity 0.3s, transform 0.3s; border: 3px double var(--wood-dark); pointer-events: auto; cursor: pointer; transform: translateX(20px); font-family: var(--font-main); text-align: left; line-height: 1.5; }
+.ts-npc-bubble.visible { opacity: 1; transform: translateX(0); }
+.npc-bubble-tail-bg { position: absolute; bottom: 25px; right: -18px; width: 0; height: 0; border-top: 15px solid transparent; border-bottom: 15px solid transparent; border-left: 15px solid var(--wood-dark); }
+.npc-bubble-tail-fg { position: absolute; bottom: 28px; right: -12px; width: 0; height: 0; border-top: 12px solid transparent; border-bottom: 12px solid transparent; border-left: 12px solid var(--panel-bg); }
+.ts-npc-portrait { width: 250px; height: 718px; pointer-events: auto; cursor: pointer; transition: transform 0.2s; display: flex; align-items: flex-end; justify-content: center; filter: drop-shadow(-5px 0 15px rgba(0,0,0,0.8)); transform-origin: bottom center; }
+.ts-npc-portrait.active { transform: scale(1.03); }
+.npc-portrait-img { width: 100%; height: 100%; object-fit: contain; pointer-events: none; }
+.ts-npc-portrait.fallback { background: linear-gradient(to top, rgba(28,20,13,0.9), transparent); }
+.npc-portrait-fallback { font-size: 120px; padding-bottom: 50px; pointer-events: none; text-shadow: 0 5px 15px rgba(0,0,0,0.8); }
+
+/* Tooltip Extras */
+.grade-common { color: #5d4037; }
+.grade-uncommon { color: var(--success); }
+.grade-rare { color: #0d47a1; }
+.grade-epic { color: #4a148c; }
+.grade-legendary { color: var(--danger); text-shadow: 0 0 5px rgba(139,0,0,0.5); }
+.tt-diff-up { color: var(--success); font-size: 11px; }
+.tt-diff-down { color: var(--danger); font-size: 11px; }
+.tt-txt-2h { color: var(--danger); font-weight: bold; }
+.tt-txt-1h { color: #0d47a1; }
+.tt-stat-atk { color: #8b0000; }
+.tt-stat-def { color: #2c3e50; }
+.tt-stat-special { color: var(--danger); font-weight: bold; }
+.tt-skill-info { margin-top: 6px; padding-top: 6px; border-top: 1px dotted var(--border-dim); color: #4a148c; font-weight: bold; }
+.tt-job-req { color: var(--wood-light); font-size: 11px; margin-top: 4px; font-weight: bold; }
+.tt-container { min-width: 200px; }
+.tt-header { font-weight: bold; font-size: 16px; margin-bottom: 4px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-dim); padding-bottom: 4px;}
+.tt-type-lbl { font-size: 12px; color: var(--text-ink); font-family: var(--font-main); font-weight: normal;}
+.tt-grade-lbl { font-size: 11px; color: var(--wood-light); margin-bottom: 8px; font-weight: bold; text-transform: uppercase;}
+.tt-stats-box { font-size: 13px; font-weight: bold; margin-bottom: 8px; font-family: var(--font-game); letter-spacing: 0.5px;}
+.tt-desc-box { font-size: 12px; color: var(--text-ink); line-height: 1.5; margin-bottom: 8px; font-family: var(--font-main); }
+.tt-price-box { font-size: 13px; color: var(--danger); text-align: right; margin-top: 10px; border-top: 2px dotted var(--border-dim); padding-top: 6px; font-family: var(--font-game); font-weight: bold; }
+/* =========================================
+   [추가] SkillManager.js 분리형 클래스 (양피지 테마)
+   ========================================= */
+
+/* Modal Overlays & Scrolling */
+.skill-modal-overlay { background: rgba(28, 20, 13, 0.9) !important; }
+.scroll-box::-webkit-scrollbar { width: 8px; }
+.scroll-box::-webkit-scrollbar-track { background: rgba(93, 64, 55, 0.2); border-radius: 4px; margin: 4px; }
+.scroll-box::-webkit-scrollbar-thumb { background: var(--wood-dark); border-radius: 4px; border: 1px solid var(--border-dim); }
+.scroll-box::-webkit-scrollbar-thumb:hover { background: var(--danger); }
+.scroll-box { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 15px; min-height: 0; }
+
+/* Headers & Navigation */
+.skill-sub-header { justify-content: space-between; padding: 0 30px; flex-shrink: 0; background: var(--wood-dark); border-bottom: 3px solid var(--border-dim); align-items: center; display: flex; height: 65px; }
+.skill-main-title { margin: 0; color: var(--gold); font-family: var(--font-game); letter-spacing: 2px; font-size: 22px; text-shadow: 2px 2px 4px #000; }
+.skill-nav-group { display: flex; gap: 15px; align-items: center; }
+.skill-nav-btn { background: var(--item-bg); border: 2px solid var(--border-dim); padding: 8px 25px; border-radius: 2px; cursor: pointer; font-family: var(--font-game); font-size: 13px; font-weight: bold; transition: 0.2s; box-shadow: 2px 2px 0 #1a110a; }
+.skill-nav-btn:active { transform: translate(2px,2px); box-shadow: none; }
+.skill-nav-btn.to-hero { color: var(--wood-dark); }
+.skill-nav-btn.to-hero:hover { background: #e8dcc4; border-color: var(--gold); }
+.skill-nav-btn.to-party { color: #0d47a1; border-color: #0d47a1; }
+.skill-nav-btn.to-party:hover { background: #e8dcc4; border-color: #1976d2; color: #1976d2; }
+.skill-close-btn { background: transparent; color: var(--border-dim); border: none; font-size: 24px; cursor: pointer; font-weight: bold; transition: 0.2s; }
+.skill-close-btn:hover { color: var(--danger); transform: scale(1.1); }
+
+/* Layout Columns */
+.skill-ui-wrapper { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.manage-col { flex: 1; display: flex; flex-direction: column; border: 3px double var(--wood-dark); background: var(--panel-bg); border-radius: 2px; overflow: hidden; box-shadow: inset 0 0 15px rgba(93,64,55,0.4); min-height: 0; }
+.roster-col { flex: 0.8; }
+.equipped-col { flex: 1.2; }
+.all-skills-col { flex: 1.6; }
+.max-hint { font-size: 11px; color: var(--wood-light); font-weight: normal; font-family: var(--font-main); }
+
+/* Roster / Hero List */
+.roster-divider { font-size: 13px; color: var(--danger); margin: 15px 0 10px 5px; font-family: var(--font-game); font-weight: bold; letter-spacing: 1px; border-bottom: 2px dotted var(--border-dim); padding-bottom: 5px; }
+.roster-divider.reserve { color: var(--wood-dark); margin-top: 25px; }
+.hero-list-item { background: var(--item-bg); border: 2px solid var(--border-dim); display: flex; align-items: center; gap: 10px; padding: 10px; margin-bottom: 8px; border-radius: 2px; cursor: pointer; transition: 0.2s; color: var(--text-ink); box-shadow: 2px 2px 5px rgba(0,0,0,0.1); }
+.hero-list-item.selected { background: #f4ebd8; border-color: var(--danger); box-shadow: inset 4px 0 0 var(--danger); }
+.hero-list-item:hover:not(.selected) { background: #e8dcc4; border-color: var(--gold); transform: translateX(3px); }
+.list-icon { background: var(--bg-parchment); border: 2px solid var(--wood-dark); font-size: 24px; min-width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; border-radius: 2px; overflow: hidden; }
+.hero-list-item.selected .list-icon { border-color: var(--danger); }
+.list-icon-img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
+.list-info { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
+.list-hero-name { margin: 0; font-size: 15px; font-weight: bold; color: var(--wood-dark); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: var(--font-main); }
+.hero-list-item.selected .list-hero-name { color: var(--danger); }
+.list-hero-lv { font-size: 11px; color: var(--text-ink); font-weight: normal; margin-left: 5px; }
+.list-hero-class { font-size: 10px; color: #0d47a1; margin-top: 4px; font-family: var(--font-main); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: bold; }
+.list-indicator { width: 15px; text-align: right; color: var(--danger); font-size: 14px; font-weight: bold; flex-shrink: 0; }
+
+/* Filter Bar */
+.skill-filter-bar { display: flex; gap: 8px; margin-bottom: 15px; padding-bottom: 12px; border-bottom: 2px dotted var(--border-dim); position: sticky; top: 0; background: var(--panel-bg); z-index: 10; }
+.skill-filter-btn { flex: 1; padding: 8px; border-radius: 2px; font-size: 12px; font-weight: bold; cursor: pointer; font-family: var(--font-game); transition: 0.2s; background: var(--item-bg); color: var(--wood-dark); border: 2px solid var(--border-dim); box-shadow: 2px 2px 0 #1a110a; }
+.skill-filter-btn:active { transform: translate(2px,2px); box-shadow: none; }
+.skill-filter-btn.active { box-shadow: inset 0 0 10px rgba(0,0,0,0.2); transform: translateY(2px); }
+.btn-all.active { background: var(--wood-dark); color: #ebd9b4; border-color: #1a110a; }
+.btn-action.active { background: #f4ebd8; color: var(--danger); border-color: var(--danger); }
+.btn-support.active { background: #e3f2fd; color: #0d47a1; border-color: #0d47a1; }
+.btn-auto.active { background: #fff8e1; color: #f57f17; border-color: #f57f17; }
+
+/* Skill Cards (General) */
+.skill-list-container { display: flex; flex-direction: column; gap: 12px; }
+.ts-skill-card { display: flex; align-items: center; background: var(--item-bg); border: 2px solid var(--border-dim); border-radius: 2px; padding: 12px; cursor: pointer; transition: 0.2s; box-shadow: 2px 2px 5px rgba(0,0,0,0.1); color: var(--text-ink); font-family: var(--font-main); }
+.ts-skill-card:hover { border-color: var(--danger); background: #f4ebd8; transform: translateY(-2px); box-shadow: 3px 5px 10px rgba(139,0,0,0.2); }
+.ts-skill-card.equipped { border-color: var(--success); background: #e8f5e9; }
+.ts-skill-card.locked { border-style: dashed; opacity: 0.6; filter: sepia(50%); cursor: not-allowed; }
+.ts-skill-card.sub-card { flex: 1; padding: 10px; min-height: 65px; margin: 0; }
+.sc-icon { font-size: 28px; width: 48px; height: 48px; background: var(--panel-bg); border: 2px solid var(--border-dim); border-radius: 2px; display: flex; align-items: center; justify-content: center; margin-right: 15px; filter: drop-shadow(2px 2px 2px rgba(0,0,0,0.2)); flex-shrink: 0; box-shadow: inset 0 0 5px rgba(0,0,0,0.1); }
+.sub-card .sc-icon { width: 38px; height: 38px; font-size: 22px; margin-right: 10px; }
+.sc-info { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; overflow: hidden; }
+.sc-name { font-size: 15px; font-weight: bold; color: var(--wood-dark); margin-bottom: 5px; display: flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: var(--font-main); }
+.sc-desc { font-size: 12px; color: var(--text-ink); line-height: 1.4; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; white-space: normal; }
+.sub-card .sc-desc { font-size: 11px; }
+.sc-cost { display: flex; flex-direction: column; align-items: flex-end; justify-content: center; min-width: 55px; font-size: 12px; font-family: var(--font-game); flex-shrink: 0; font-weight: bold; }
+.sc-part-label { color: var(--danger); font-weight: bold; font-size: 14px; margin-bottom: 5px; letter-spacing: 1px; }
+.sc-mp { color: #0d47a1; } 
+.sc-wt { color: #8b0000; }
+
+/* Equipped Slots */
+.ts-skill-card.slot-action { border-color: var(--danger); border-left-width: 6px; }
+.ts-skill-card.slot-support { border-color: #0d47a1; border-left-width: 6px; }
+.ts-skill-card.slot-auto { border-color: #f57f17; border-left-width: 6px; }
+.slot-type-lbl { font-size: 11px; font-weight: bold; font-family: var(--font-game); }
+.slot-action .slot-type-lbl, .slot-action .sc-part-label { color: var(--danger); }
+.slot-support .slot-type-lbl, .slot-support .sc-part-label { color: #0d47a1; }
+.slot-auto .slot-type-lbl, .slot-auto .sc-part-label { color: #f57f17; }
+.equipped-slot { height: 75px; background: rgba(93,64,55,0.05); border: 2px dashed var(--border-dim); border-radius: 2px; display: flex; align-items: center; justify-content: center; font-weight: bold; margin-bottom: 12px; font-size: 13px; letter-spacing: 1px; font-family: var(--font-game); opacity: 0.7; }
+.equipped-slot.slot-action { border-color: var(--danger); color: var(--danger); }
+.equipped-slot.slot-support { border-color: #0d47a1; color: #0d47a1; }
+.equipped-slot.slot-auto { border-color: #f57f17; color: #f57f17; }
+
+/* Badges & SP Bar */
+.badge-unequip { background: var(--item-bg); color: var(--danger); padding: 3px 8px; border-radius: 2px; font-size: 10px; margin-left: 10px; border: 1px solid var(--danger); box-shadow: 1px 1px 0 #1a110a; font-family: var(--font-game); }
+.badge-equipped { color: var(--success); font-size: 11px; margin-left: 6px; flex-shrink: 0; font-family: var(--font-main); }
+.badge-locked { background: #3e2723; color: #e57373; padding: 3px 6px; border-radius: 2px; font-size: 10px; margin-left: 6px; border: 1px solid #e57373; }
+.sc-sp-bar-container { margin-top: 8px; }
+.sc-sp-label { display: flex; justify-content: space-between; font-size: 10px; color: #4a148c; font-weight: bold; margin-bottom: 3px; font-family: var(--font-game); }
+.sc-sp-track { height: 5px; background: #3e2723; border-radius: 2px; overflow: hidden; border: 1px solid #1a110a; }
+.sc-sp-fill { height: 100%; background: linear-gradient(90deg, #7b1fa2, #e1bee7); }
+
+/* Category Folders & Branching */
+.skill-category-folder { background: var(--panel-bg); border: 2px solid var(--border-dim); border-radius: 2px; margin-bottom: 8px; }
+.skill-category-folder.equipped { border-color: var(--danger); box-shadow: 0 0 10px rgba(139,0,0,0.2); }
+.cat-header { display: flex; align-items: center; padding: 14px 18px; background: var(--wood-dark); cursor: pointer; transition: 0.2s; border-bottom: 2px solid transparent; }
+.cat-header.expanded { border-bottom-color: var(--border-dim); }
+.cat-arrow { width: 20px; font-size: 13px; color: var(--gold); transition: 0.2s; }
+.cat-title { flex: 1; font-weight: bold; color: var(--gold); font-size: 15px; display: flex; align-items: center; font-family: var(--font-main); }
+.cat-folder-icon { font-size: 20px; margin-right: 10px; }
+.cat-count-badge { font-size: 11px; color: #ebd9b4; font-weight: normal; margin-left: 10px; background: #1a110a; padding: 3px 8px; border-radius: 2px; border: 1px solid var(--border-dim); }
+.cat-action-btn { padding: 6px 14px; border-radius: 2px; font-size: 12px; font-weight: bold; cursor: pointer; box-shadow: 2px 2px 0 #1a110a; font-family: var(--font-game); border: 2px solid; transition: 0.1s; }
+.cat-action-btn:active { transform: translate(2px,2px); box-shadow: none; }
+.cat-action-btn.unequip { background: var(--item-bg); color: var(--danger); border-color: var(--danger); }
+.cat-action-btn.equip { background: var(--wood-dark); color: var(--success); border-color: var(--success); }
+.cat-content { flex-direction: column; padding: 12px 18px 12px 8px; background: rgba(93,64,55,0.05); position: relative; }
+.skill-card-row { display: flex; align-items: stretch; position: relative; margin-bottom: 10px; }
+.skill-card-row.last-row { margin-bottom: 0; }
+.branch-ui-box { width: 35px; position: relative; flex-shrink: 0; }
+.branch-vline { position: absolute; left: 18px; border-left: 2px dashed var(--border-dim); }
+.branch-hline { position: absolute; top: 50%; left: 18px; width: 17px; border-top: 2px dashed var(--border-dim); }
+.empty-state-msg { text-align: center; padding: 40px; color: var(--border-dim); font-size: 14px; font-weight: bold; font-family: var(--font-main); }
+
+/* Tooltip Extras for Skills */
+.tt-req-weapon-box { color: var(--wood-light); font-size: 11px; margin-top: 6px; border-top: 2px dotted var(--border-dim); padding-top: 4px; font-weight: bold; }
+.tt-req-weapon-box span { color: #ebd9b4; }
+.tt-warning-msg { margin-top: 4px; padding-top: 4px; color: #e57373; font-weight: bold; }
+.tt-part-tag { color: var(--gold); font-weight: bold; font-family: var(--font-game); }
+.tt-txt-mp { color: #64b5f6; margin-left: 10px; }
+.tt-txt-wt { color: #e57373; margin-left: 10px; }
+.tt-skill-name { color: var(--gold); font-weight: bold; font-size: 16px; margin-bottom: 6px; border-bottom: 1px solid var(--border-dim); padding-bottom: 4px; }
+.tt-skill-desc { font-size: 13px; color: #ebd9b4; margin-bottom: 10px; line-height: 1.5; }
+.tt-skill-cost-row { display: flex; justify-content: space-between; align-items: center; font-size: 12px; border-top: 1px solid var(--border-dim); padding-top: 6px; }
+.tt-class-lv { color: var(--wood-light); font-weight: bold; }
+/* =========================================
+   [추가] main.js 분리형 클래스 (양피지/중세 테마)
+   ========================================= */
+
+/* Resource Display (골드/명성/코인) */
+.res-item { margin-right: 15px; font-family: var(--font-game); font-weight: bold; }
+.res-gold { color: var(--gold); }
+.res-renown { color: #d35400; }
+.res-coin { margin-right: 0; color: #4a90e2; }
+
+/* World Map (월드맵) */
+.wm-title { color: var(--gold); text-shadow: 2px 4px 6px #000; font-family: var(--font-game); margin-bottom: 20px; font-size: 48px; letter-spacing: 5px; }
+.wm-btn-town { width: 200px; padding: 15px; background: var(--wood-dark); color: #ebd9b4; border: 2px solid var(--border-dim); border-radius: 2px; cursor: pointer; font-size: 18px; font-weight: bold; box-shadow: 4px 6px 10px rgba(0,0,0,0.5); font-family: var(--font-game); transition: 0.2s; }
+.wm-btn-town:hover { background: var(--danger); border-color: var(--gold); transform: translateY(-3px); }
+.wm-line { width: 4px; height: 40px; background: var(--border-dim); border-left: 1px solid rgba(255,255,255,0.1); }
+.wm-stage-grid { display: flex; flex-wrap: wrap; gap: 20px; justify-content: center; max-width: 900px; }
+.wm-node-stage { width: 85px; height: 85px; border-radius: 2px; display: flex; flex-direction: column; align-items: center; justify-content: center; transition: 0.2s; border: 2px solid; box-shadow: 2px 4px 6px rgba(0,0,0,0.4); }
+.wm-node-stage.cleared { background: var(--item-bg); border-color: var(--wood-dark); cursor: pointer; }
+.wm-node-stage.unlocked { background: var(--wood-dark); border-color: var(--gold); cursor: pointer; opacity: 1; }
+.wm-node-stage.unlocked:hover { transform: scale(1.1); box-shadow: 0 0 15px rgba(184,134,11,0.6); }
+.wm-node-stage.locked { background: rgba(93,64,55,0.3); border-color: #3e2723; cursor: not-allowed; opacity: 0.6; filter: grayscale(100%); }
+.wm-stage-lbl { font-size: 10px; color: var(--wood-light); font-family: var(--font-main); font-weight: bold; }
+.unlocked .wm-stage-lbl { color: #ebd9b4; }
+.wm-stage-val { font-size: 22px; font-weight: bold; font-family: var(--font-game); }
+.cleared .wm-stage-val { color: var(--wood-dark); }
+.unlocked .wm-stage-val { color: var(--gold); }
+.wm-stage-check { color: var(--danger); font-size: 14px; margin-top: 2px; font-weight: bold; }
+.wm-footer { margin-top: 50px; display: flex; gap: 20px; }
+.wm-menu-btn { padding: 12px 25px; background: var(--item-bg); color: var(--wood-dark); border: 2px solid var(--border-dim); border-radius: 2px; font-weight: bold; font-size: 14px; font-family: var(--font-game); cursor: pointer; transition: 0.2s; box-shadow: 2px 2px 0 #1a110a; }
+.wm-menu-btn:active { transform: translate(2px,2px); box-shadow: none; }
+.wm-menu-btn:hover { background: var(--wood-dark); color: #ebd9b4; border-color: var(--gold); }
+
+/* Village Center (마을 메인) */
+.village-desc { font-size: 14px; color: var(--wood-light); margin-top: 10px; font-family: var(--font-main); font-style: italic; }
+.v-desc { font-size: 12px; color: var(--text-ink); margin-top: 8px; font-family: var(--font-main); }
+
+/* Battle Prep / Enemy Info */
+.prep-manager-btns { position: absolute; bottom: 25px; right: 25px; z-index: 100; display: flex; gap: 15px; }
+.prep-menu-btn { padding: 10px 20px; background: var(--wood-dark); color: #ebd9b4; border: 2px solid var(--border-dim); border-radius: 2px; cursor: pointer; font-weight: bold; font-family: var(--font-game); box-shadow: 2px 2px 0 #1a110a; transition: 0.1s; }
+.prep-menu-btn:active { transform: translate(2px,2px); box-shadow: none; }
+.prep-menu-btn:hover { background: var(--danger); border-color: var(--gold); color: #fff; }
+.prep-inner-map { position: relative; transition: transform 0.3s; }
+.zone-locked { filter: brightness(0.7) sepia(50%); pointer-events: none; }
+.em-icon { font-size: 24px; filter: drop-shadow(2px 2px 2px rgba(0,0,0,0.5)); }
+.em-info { display: flex; flex-direction: column; }
+.em-name { font-weight: bold; color: var(--danger); font-size: 13px; font-family: var(--font-main); }
+.em-weak { font-size: 11px; color: var(--wood-dark); margin-top: 2px; }
+.tip-highlight { color: var(--gold); font-size: 14px; }
+.dep-icon-wrap { display: flex; align-items: center; justify-content: center; margin-right: 8px; }
+.dep-icon-img { width: 28px; height: 28px; object-fit: cover; border-radius: 2px; border: 1px solid var(--border-dim); }
+.dep-icon-fallback { font-size: 22px; filter: drop-shadow(1px 1px 1px rgba(0,0,0,0.5)); }
+.dep-name { flex: 1; font-weight: bold; font-size: 13px; color: var(--wood-dark); font-family: var(--font-main); }
+.dep-crown { font-size: 14px; margin-left: 5px; }
+.active-leader .dep-name { color: var(--danger); }
+.roster-card-h.dead { filter: grayscale(100%) sepia(50%) brightness(0.7); cursor: not-allowed; border-style: dashed; }
+.rost-icon-wrap { display: flex; align-items: center; justify-content: center; margin-bottom: 4px; width: 100%; }
+.rost-icon-img { width: 44px; height: 44px; object-fit: cover; border-radius: 2px; border: 2px solid var(--border-dim); box-shadow: 2px 2px 4px rgba(0,0,0,0.3); }
+.rost-icon-fallback { font-size: 32px; filter: drop-shadow(2px 2px 2px rgba(0,0,0,0.5)); }
+.rost-name { font-size: 12px; font-weight: bold; color: var(--wood-dark); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 95%; font-family: var(--font-main); }
+.rost-lv { font-size: 10px; color: var(--text-ink); margin-bottom: 4px; font-family: var(--font-main); font-weight: bold; }
+.mini-bars { width: 100%; display: flex; flex-direction: column; gap: 2px; padding: 0 5px; box-sizing: border-box; }
+.mini-bar-bg { width: 100%; height: 4px; background: #3e2723; border: 1px solid #1a110a; }
+.mini-bar-fill { height: 100%; }
+.result-title-defeat { color: var(--danger) !important; font-family: var(--font-game); text-shadow: 2px 2px 4px #000; letter-spacing: 3px; }
+.btn-defeat-back { background: var(--item-bg); color: var(--wood-dark); border: 2px solid var(--border-dim); padding: 10px 20px; font-family: var(--font-game); font-weight: bold; cursor: pointer; border-radius: 2px; box-shadow: 2px 2px 0 #1a110a; }
+.btn-defeat-back:hover { background: var(--wood-dark); color: #ebd9b4; }
+
+/* Party Manager */
+.party-manager-overlay { background: rgba(28, 20, 13, 0.9) !important; }
+.party-sub-header { width: 100%; display: flex; justify-content: space-between; padding: 20px 30px; flex-shrink: 0; background: var(--wood-dark); border-bottom: 3px solid var(--border-dim); align-items: center; box-sizing: border-box; height: 80px; }
+.party-header-titles { display: flex; flex-direction: column; gap: 4px; }
+.party-header-titles h2 { margin: 0; color: var(--gold); font-family: var(--font-game); letter-spacing: 2px; font-size: 24px; text-shadow: 2px 2px 4px #000; }
+.party-header-desc { font-size: 12px; color: #ebd9b4; font-family: var(--font-main); font-weight: bold; }
+.party-header-nav { display: flex; gap: 15px; align-items: center; }
+.party-nav-btn { background: var(--item-bg); border: 2px solid var(--border-dim); padding: 10px 25px; border-radius: 2px; cursor: pointer; font-family: var(--font-game); font-size: 13px; font-weight: bold; box-shadow: 2px 2px 0 #1a110a; transition: 0.1s; }
+.party-nav-btn:active { transform: translate(2px,2px); box-shadow: none; }
+.party-nav-btn.to-hero { color: var(--wood-dark); }
+.party-nav-btn.to-hero:hover { background: #e8dcc4; border-color: var(--gold); }
+.party-nav-btn.to-skill { color: #0d47a1; border-color: #0d47a1; }
+.party-nav-btn.to-skill:hover { background: #e8dcc4; color: #1976d2; border-color: #1976d2; }
+.party-nav-btn.close-btn { background: var(--wood-dark); color: var(--danger); border-color: var(--danger); margin-left: 20px; }
+.party-nav-btn.close-btn:hover { background: var(--danger); color: #fff; }
+
+.party-roster-scroll { padding: 25px; display: flex; flex-direction: column; flex: 1; min-height: 0; box-sizing: border-box; width: 100%; overflow-y: auto; }
+.party-section-box { background: var(--panel-bg); padding: 20px; border-radius: 2px; border: 3px double var(--wood-dark); margin-bottom: 25px; flex-shrink: 0; box-shadow: inset 0 0 20px rgba(93,64,55,0.2); }
+.party-section-box.expand { flex: 1; min-height: 250px; margin-bottom: 0; }
+.party-section-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 20px; border-bottom: 2px solid var(--border-dim); padding-bottom: 10px; }
+.party-section-title { font-size: 15px; color: var(--danger); font-family: var(--font-game); font-weight: bold; letter-spacing: 1px; border-left: 4px solid var(--danger); padding-left: 12px; }
+.party-section-title.with-margin { margin-bottom: 20px; border-bottom: 2px dotted var(--border-dim); padding-bottom: 10px; }
+.party-count-display { font-size: 18px; font-weight: bold; color: var(--wood-dark); font-family: var(--font-game); }
+#party-count-val { color: var(--danger); }
+
+.party-slots-container { display: flex; gap: 15px; flex-wrap: nowrap; overflow-x: auto; justify-content: center; padding-bottom: 10px; }
+.party-slot-card.drag-over { border-color: var(--danger) !important; transform: scale(1.05); }
+.party-hero-name { color: var(--danger); font-size: 15px; font-weight: bold; margin-bottom: 4px; text-align: center; width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: var(--font-main); }
+.party-hero-lv { color: var(--text-ink); font-size: 12px; margin-bottom: 6px; text-align: center; width: 100%; font-family: var(--font-main); font-weight: bold; }
+.party-hero-class-en { color: #0d47a1; font-size: 11px; font-weight: bold; text-align: center; line-height: 1.2; width: 100%; word-break: keep-all; font-family: var(--font-game); }
+.party-hero-class-kr { color: var(--wood-light); font-size: 11px; text-align: center; margin-top: 4px; width: 100%; font-family: var(--font-main); }
+.party-slot-img { width: 120px; height: 120px; object-fit: cover; border-radius: 2px; border: 2px solid var(--border-dim); pointer-events: none; box-shadow: 2px 4px 6px rgba(0,0,0,0.3); }
+.party-slot-fallback { pointer-events: none; font-size: 60px; width: 120px; height: 120px; display: flex; align-items: center; justify-content: center; background: var(--bg-parchment); border-radius: 2px; border: 2px solid var(--border-dim); box-shadow: inset 0 0 10px rgba(93,64,55,0.3); }
+.slot-icon-area { margin-bottom: 12px; display: flex; justify-content: center; width: 100%; }
+.slot-info-area { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; padding: 0 5px; box-sizing: border-box; }
+.slot-empty-icon { opacity: 0.3; font-size: 50px; color: var(--border-dim); }
+.slot-desc { color: var(--wood-light); margin-top: 15px; font-weight: bold; font-family: var(--font-game); }
+.remove-overlay { background: rgba(139, 0, 0, 0.9); font-family: var(--font-main); font-size: 14px; }
+
+.party-roster-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 15px; }
+.roster-slot-img { width: 100px; height: 100px; object-fit: cover; border-radius: 2px; pointer-events: none; border: 2px solid var(--border-dim); box-shadow: 2px 2px 5px rgba(0,0,0,0.2); }
+.roster-slot-fallback { pointer-events: none; font-size: 50px; width: 100px; height: 100px; display: flex; align-items: center; justify-content: center; background: var(--bg-parchment); border-radius: 2px; border: 2px solid var(--border-dim); box-shadow: inset 0 0 10px rgba(93,64,55,0.2); }
+.r-icon { margin-bottom: 10px; display: flex; justify-content: center; width: 100%; }
+.r-info-area { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; }
+.r-click-hint { font-size: 10px; color: var(--success); margin-top: 10px; pointer-events: none; background: rgba(93,64,55,0.1); padding: 4px 12px; border-radius: 2px; border: 1px solid var(--success); font-family: var(--font-main); font-weight: bold; }
+/* =========================================
+   [추가] HeroManager.js 분리형 클래스 (양피지 테마)
+   ========================================= */
+
+/* Overlays & Common */
+.hm-modal-overlay { background: rgba(28, 20, 13, 0.9) !important; }
+.hm-scroll-box { flex: 1; overflow-y: auto; overflow-x: hidden; padding: 15px; min-height: 0; display: flex; flex-direction: column; }
+.hm-scroll-box::-webkit-scrollbar { width: 8px; }
+.hm-scroll-box::-webkit-scrollbar-track { background: rgba(93, 64, 55, 0.2); border-radius: 4px; margin: 4px; }
+.hm-scroll-box::-webkit-scrollbar-thumb { background: var(--wood-dark); border-radius: 4px; border: 1px solid var(--border-dim); }
+.hm-scroll-box::-webkit-scrollbar-thumb:hover { background: var(--danger); }
+
+/* Header & Nav */
+.hm-sub-header { justify-content: space-between; padding: 0 30px; flex-shrink: 0; background: var(--wood-dark); border-bottom: 3px solid var(--border-dim); align-items: center; display: flex; height: 65px; }
+.hm-main-title { margin: 0; color: var(--gold); font-family: var(--font-game); letter-spacing: 2px; font-size: 22px; text-shadow: 2px 2px 4px #000; }
+.hm-nav-group { display: flex; gap: 15px; align-items: center; }
+.hm-nav-btn { background: var(--item-bg); border: 2px solid var(--border-dim); padding: 8px 25px; border-radius: 2px; cursor: pointer; font-family: var(--font-game); font-size: 13px; font-weight: bold; transition: 0.2s; box-shadow: 2px 2px 0 #1a110a; }
+.hm-nav-btn:active { transform: translate(2px,2px); box-shadow: none; }
+.hm-nav-btn.to-party { color: #0d47a1; border-color: #0d47a1; }
+.hm-nav-btn.to-party:hover { background: #e8dcc4; color: #1976d2; border-color: #1976d2; }
+.hm-nav-btn.to-skill { color: #4a148c; border-color: #4a148c; }
+.hm-nav-btn.to-skill:hover { background: #e8dcc4; color: #6a1b9a; border-color: #6a1b9a; }
+.hm-close-btn { background: transparent; color: var(--border-dim); border: none; font-size: 24px; cursor: pointer; font-weight: bold; transition: 0.2s; }
+.hm-close-btn:hover { color: var(--danger); transform: scale(1.1); }
+
+/* Layout Columns */
+.hm-ui-wrapper { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.hm-col-header { padding: 12px; background: var(--wood-dark); font-weight: bold; border-bottom: 2px solid var(--border-dim); flex-shrink: 0; text-align: center; font-family: var(--font-game); color: var(--gold); font-size: 15px; letter-spacing: 2px; }
+.hm-col-roster { flex: 0.9; }
+.hm-col-stats { flex: 1.2; position: relative; }
+.hm-col-equip { flex: 1.1; }
+.hm-col-inv { flex: 1.0; }
+.hm-center-box { align-items: center; }
+.hm-empty-msg { color: var(--border-dim); text-align: center; padding: 50px; font-weight: bold; font-family: var(--font-main); }
+
+/* Hero List / Roster */
+.hm-list-divider { font-size: 13px; color: var(--danger); margin: 15px 0 10px 5px; font-family: var(--font-game); font-weight: bold; letter-spacing: 1px; border-bottom: 2px dotted var(--border-dim); padding-bottom: 5px; }
+.hm-list-divider.reserve { color: var(--wood-dark); margin-top: 25px; }
+.hm-list-item { background: var(--item-bg); border: 2px solid var(--border-dim); display: flex; align-items: center; gap: 10px; padding: 10px; margin-bottom: 8px; border-radius: 2px; cursor: pointer; transition: 0.2s; color: var(--text-ink); box-shadow: 2px 2px 5px rgba(0,0,0,0.1); }
+.hm-list-item.selected { background: #f4ebd8; border-color: var(--danger); box-shadow: inset 4px 0 0 var(--danger); }
+.hm-list-item:hover:not(.selected) { background: #e8dcc4; border-color: var(--gold); transform: translateX(3px); }
+.hm-list-icon { background: var(--bg-parchment); border: 2px solid var(--wood-dark); font-size: 24px; min-width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; border-radius: 2px; overflow: hidden; }
+.hm-list-item.selected .hm-list-icon { border-color: var(--danger); }
+.hm-list-img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
+.hm-list-info { flex: 1; min-width: 0; display: flex; flex-direction: column; justify-content: center; }
+.hm-list-name { margin: 0; font-size: 15px; font-weight: bold; color: var(--wood-dark); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-family: var(--font-main); }
+.hm-list-item.selected .hm-list-name { color: var(--danger); }
+.hm-list-lv { font-size: 11px; color: var(--text-ink); font-weight: normal; margin-left: 5px; }
+.hm-list-class { font-size: 10px; color: #0d47a1; margin-top: 4px; font-family: var(--font-game); font-weight: bold; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hm-list-arrow { width: 15px; text-align: right; color: var(--danger); font-size: 14px; font-weight: bold; flex-shrink: 0; }
+
+/* Equipment Panel (Paper Doll) */
+.hm-equip-portrait-wrap { margin-bottom: 12px; filter: drop-shadow(2px 4px 6px rgba(0,0,0,0.5)); text-align: center; display: flex; justify-content: center; }
+.hm-equip-img { width: 130px; height: 130px; object-fit: cover; border-radius: 2px; border: 3px double var(--wood-dark); }
+.hm-equip-fallback { width: 130px; height: 130px; background: var(--panel-bg); border-radius: 2px; border: 3px double var(--wood-dark); display: flex; align-items: center; justify-content: center; font-size: 60px; box-shadow: inset 0 0 10px rgba(93,64,55,0.3); }
+.hm-equip-name { color: var(--danger); font-size: 20px; font-weight: bold; margin-bottom: 6px; text-align: center; letter-spacing: 1px; font-family: var(--font-main); }
+.hm-equip-lv { color: var(--text-ink); font-size: 13px; margin-bottom: 8px; text-align: center; font-weight: bold; font-family: var(--font-main); }
+.hm-equip-class-en { color: #0d47a1; font-size: 13px; font-weight: bold; text-align: center; line-height: 1.2; font-family: var(--font-game); }
+.hm-equip-class-kr { color: var(--wood-light); font-size: 11px; text-align: center; margin-top: 4px; font-family: var(--font-main); font-weight: bold; }
+.hm-equip-jp-wrap { text-align: center; margin-top: 15px; margin-bottom: 15px; display: flex; flex-direction: column; align-items: center; }
+.hm-equip-jp { display: inline-block; background: var(--wood-dark); padding: 6px 16px; border-radius: 2px; border: 2px solid var(--border-dim); color: #ebd9b4; font-size: 12px; font-weight: bold; box-shadow: 2px 2px 0 #1a110a; font-family: var(--font-game); }
+.hm-paper-doll { position: relative; width: 100%; height: 380px; flex-shrink: 0; background: url('data:image/svg+xml;utf8,<svg opacity="0.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><filter id="n"><feTurbulence type="fractalNoise" baseFrequency="0.4"/></filter><rect width="100" height="100" filter="url(%23n)"/></svg>') var(--panel-bg); border-radius: 2px; margin-bottom: 15px; margin-top: 5px; box-sizing: border-box; border: 4px double var(--border-dim); box-shadow: inset 0 0 20px rgba(93,64,55,0.3); }
+
+/* Paper Doll Slots */
+.hm-doll-slot { position: absolute; width: 48px; height: 48px; border-radius: 2px; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1); z-index: 10; box-shadow: 2px 2px 5px rgba(0,0,0,0.2); }
+.hm-doll-slot.empty { background: rgba(93,64,55,0.1); border: 2px dashed var(--border-dim); opacity: 0.6; }
+.hm-doll-slot.empty:hover { opacity: 1; border-color: var(--danger); background: rgba(184,134,11,0.2); }
+.hm-doll-slot.empty .hm-slot-icon { opacity: 0.3; filter: sepia(100%); }
+.hm-doll-slot.filled { border: 2px solid var(--wood-dark); background: var(--item-bg); opacity: 1; }
+.hm-doll-slot.filled:hover { border-color: var(--danger); box-shadow: 0 0 15px rgba(139,0,0,0.4); z-index: 20; background: #f4ebd8; }
+.hm-slot-icon { font-size: 26px; margin-bottom: 0px; pointer-events: none; filter: drop-shadow(1px 1px 2px rgba(0,0,0,0.4)); }
+.hm-slot-label { font-size: 10px; color: var(--wood-light); font-weight: bold; text-transform: uppercase; pointer-events: none; margin-top: 2px; font-family: var(--font-game); }
+.filled .hm-slot-label { color: var(--danger); }
+.hm-stack-badge { position: absolute; bottom: -6px; right: -6px; background: var(--danger); color: #ebd9b4; font-size: 11px; font-weight: bold; border-radius: 50%; width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; border: 2px solid var(--wood-dark); z-index: 30; pointer-events: none; font-family: var(--font-game); box-shadow: 1px 1px 3px rgba(0,0,0,0.5); }
+
+/* Slot Positions */
+.slot-head { top: 20px; left: 50%; transform: translateX(-50%); }
+.slot-neck { top: 75px; left: 50%; transform: translateX(-50%); width: 40px; height: 40px; }
+.slot-body { top: 130px; left: 50%; transform: translateX(-50%); width: 55px; height: 75px; }
+.slot-legs { top: 220px; left: 50%; transform: translateX(-50%); }
+.slot-main { top: 135px; left: 50%; transform: translateX(-160%); width: 55px; height: 55px; } 
+.slot-off  { top: 135px; left: 50%; transform: translateX(60%); width: 55px; height: 55px; }
+.slot-ring { top: 225px; left: 50%; transform: translateX(70%); width: 40px; height: 40px; }
+.alchemist-bag { border-color: #6a1b9a !important; box-shadow: 0 0 10px rgba(106,27,154,0.4) !important; cursor: default !important; }
+.alchemist-bag .hm-slot-label { color: #6a1b9a !important; }
+.locked { cursor: not-allowed !important; background: rgba(93,64,55,0.2) !important; border-color: #3e2723 !important; }
+.locked .hm-slot-icon { color: var(--danger) !important; filter: none !important; opacity: 0.8 !important; }
+.hm-pocket-container { position: absolute; bottom: 15px; left: 50%; transform: translateX(-50%); display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; padding: 10px; background: rgba(93,64,55,0.1); border-radius: 2px; border: 2px dashed var(--border-dim); }
+.slot-pocket { position: relative !important; top: auto !important; left: auto !important; transform: none !important; width: 42px !important; height: 42px !important; margin: 0 !important; }
+.locked-pocket { cursor: not-allowed !important; opacity: 0.3 !important; }
+.locked-pocket .hm-slot-icon { color: var(--border-dim) !important; }
+
+/* Inventory Grid */
+.hm-inventory-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(55px, 1fr)); gap: 8px; }
+.hm-inv-slot { aspect-ratio: 1/1; background: rgba(93,64,55,0.1); border: 2px dashed var(--border-dim); border-radius: 2px; display: flex; align-items: center; justify-content: center; cursor: default; position: relative; transition: 0.2s; box-sizing: border-box; }
+.hm-inv-slot.has-item { background: var(--item-bg); border: 2px solid var(--border-dim); cursor: grab; opacity: 1; box-shadow: 2px 2px 4px rgba(0,0,0,0.1); }
+.hm-inv-slot.cannot-equip { border-style: dashed; opacity: 0.5; filter: sepia(50%); }
+.hm-inv-slot.has-item:hover { border-color: var(--danger); filter: brightness(1.1); transform: translateY(-2px); box-shadow: 2px 4px 6px rgba(139,0,0,0.3); }
+.hm-inv-icon { font-size: 28px; pointer-events: none; filter: drop-shadow(1px 1px 2px rgba(0,0,0,0.3)); }
+
+/* Stats Panel */
+.hm-stats-pad { padding-bottom: 65px !important; }
+.hm-stat-section { background: var(--item-bg); border: 2px solid var(--border-dim); border-radius: 2px; padding: 15px; margin-bottom: 15px; flex-shrink: 0; width: 100%; box-sizing: border-box; box-shadow: 2px 2px 5px rgba(0,0,0,0.1); }
+.hm-stat-section.no-margin { margin-bottom: 0; }
+.hm-stat-title { font-family: var(--font-game); font-size: 13px; color: var(--wood-dark); font-weight: bold; letter-spacing: 1px; margin-bottom: 12px; border-bottom: 2px dotted var(--border-dim); padding-bottom: 6px; display: flex; justify-content: space-between; align-items: center; }
+.hm-pt-badge { background: var(--item-bg); color: var(--danger); padding: 4px 8px; border-radius: 2px; border: 1px solid var(--danger); font-size: 11px; box-shadow: 1px 1px 0 #1a110a; }
+.hm-pt-badge.has-pt { background: var(--wood-dark); color: #ebd9b4; border-color: var(--gold); }
+.hm-stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; width: 100%; }
+.hm-stat-row { display: flex; justify-content: space-between; align-items: center; background: var(--panel-bg); padding: 6px 10px; border-radius: 2px; border: 1px solid var(--border-dim); min-width: 0; }
+.combat-row { background: rgba(93,64,55,0.1); border-color: rgba(93,64,55,0.3); }
+.hm-stat-name { font-size: 12px; color: var(--wood-dark); font-weight: bold; flex-shrink: 0; width: 50px; font-family: var(--font-main); }
+.hm-stat-val { flex: 1; text-align: right; font-family: var(--font-game); font-size: 14px; color: var(--danger); font-weight: bold; min-width: 0; }
+.hm-stat-bonus { color: var(--success); font-size: 12px; margin-left: 4px; }
+.hm-stat-add { background: var(--wood-dark); border: 2px solid #2d1e17; color: #ebd9b4; width: 22px; height: 22px; line-height: 18px; margin-left: 10px; border-radius: 2px; font-family: var(--font-main); font-size: 16px; font-weight: bold; cursor: pointer; box-shadow: 2px 2px 0 #1a110a; display: flex; align-items: center; justify-content: center; transition: all 0.2s ease; flex-shrink: 0; }
+.hm-stat-add:active { transform: translate(2px,2px); box-shadow: none; }
+.hm-stat-add:hover { background: var(--danger); border-color: #500; color: #fff; }
+.hm-stat-empty { width: 32px; flex-shrink: 0; }
+.stat-preview-arrow { width: 20px; text-align: center; color: var(--success); font-size: 11px; flex-shrink: 0; font-weight: bold; }
+.arrow-high { color: var(--success); }
+.arrow-mid { color: #8bc34a; }
+.arrow-low { color: #cddc39; }
+
+/* Stat Bars (HP/MP/XP) */
+.hm-bar-row { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; font-size: 12px; }
+.hm-bar-label { width: 30px; font-weight: bold; font-family: var(--font-game); flex-shrink: 0; }
+.lbl-hp { color: #8b0000; }
+.lbl-mp { color: #0d47a1; }
+.lbl-xp { color: var(--wood-dark); }
+.hm-bar-bg { flex: 1; height: 8px; background: #3e2723; border: 1px solid #1a110a; border-radius: 2px; position: relative; overflow: hidden; }
+.hm-bar-fill { height: 100%; }
+.fill-hp { background: linear-gradient(90deg, #8b0000, #b22222); }
+.fill-mp { background: linear-gradient(90deg, #0d47a1, #1976d2); }
+.fill-xp { background: linear-gradient(90deg, #5d4037, #8d6e63); }
+.hm-bar-text { width: 80px; text-align: right; color: var(--text-ink); font-family: var(--font-game); font-size: 11px; flex-shrink: 0; font-weight: bold; }
+
+/* Weapon Proficiency */
+.wp-section { margin-top: 15px; margin-bottom: 0; }
+.wp-title { color: var(--success); }
+.hm-wp-list { display: flex; flex-direction: column; gap: 10px; }
+.hm-wp-row { display: flex; align-items: center; gap: 10px; font-size: 11px; }
+.hm-wp-name { color: var(--wood-dark); font-size: 12px; width: 50px; font-family: var(--font-main); font-weight: bold; }
+.hm-wp-lv { color: var(--danger); font-size: 11px; font-weight: bold; margin-right: 5px; width: 30px; font-family: var(--font-game); }
+.wp-bg { height: 5px; flex: 1; }
+.wp-fill { background: linear-gradient(90deg, #1b5e20, #4caf50); }
+.hm-wp-text { width: 50px; text-align: right; font-size: 10px; color: var(--text-ink); font-family: var(--font-game); font-weight: bold; }
+.hm-wp-empty { text-align: center; color: var(--border-dim); font-size: 12px; padding: 15px 0; font-weight: bold; }
+
+/* Combat Stat Colors */
+.c-atk { color: #8b0000; }
+.c-mag { color: #0d47a1; }
+.c-def { color: #3e2723; }
+.c-res { color: #4a148c; }
+.c-hit { color: #b8860b; }
+.c-crit { color: #e65100; }
+.c-eva { color: #1b5e20; }
+.c-spd { color: #006064; }
+
+/* Release Button */
+.hm-release-wrap { position: absolute; bottom: 15px; left: 15px; right: 15px; display: flex; }
+.hm-release-btn { width: 100%; padding: 12px; background: rgba(139,0,0,0.1); color: var(--danger); border: 2px solid var(--danger); border-radius: 2px; cursor: pointer; font-family: var(--font-game); font-weight: bold; transition: 0.2s; box-shadow: 2px 2px 0 #1a110a; }
+.hm-release-btn:active { transform: translate(2px,2px); box-shadow: none; }
+.hm-release-btn:hover { background: var(--danger); color: #ebd9b4; border-color: #500; }
+/* =========================================================================
+   [WIDESCREEN & LAYOUT OVERHAUL] 화면 낭비 방지 및 와이드 그리드 강제 적용
+   ========================================================================= */
+
+/* 1. 공통 모달 & 서브메뉴 창 크기 대폭 확장 (최대 1600px, 화면의 95% 사용) */
+.luxury-modal-container,
+.party-modal-box.luxury,
+#scene-sub-menu .sub-menu-content {
+    width: 95vw !important;
+    max-width: 1600px !important;
+    height: 85vh !important;
+    max-height: 950px !important;
+    margin: 0 auto;
+}
+
+/* 2. 🛡️ 영웅 관리 (Hero Manager) 4열 완벽 분할 */
+#hero-ui-content .manage-container {
+    display: grid !important;
+    /* 로스터(240) | 스탯(320) | 장비(남는공간전부) | 인벤토리(320) */
+    grid-template-columns: 240px 320px minmax(400px, 1fr) 320px !important;
+    gap: 25px !important;
+    padding: 25px !important;
+}
+#hero-ui-content .manage-col {
+    width: 100% !important;
+    height: 100% !important;
+    display: flex;
+    flex-direction: column;
+}
+
+/* [영웅] 스탯창 하단 '영웅 해제' 버튼 삐져나감(Bleed) 완벽 수정 */
+.hm-release-wrap {
+    position: relative !important;
+    bottom: auto !important; left: auto !important; right: auto !important;
+    margin-top: auto !important;
+    padding-top: 20px !important;
+}
+.hm-stats-pad { padding-bottom: 0 !important; }
+
+/* [영웅] 인벤토리를 4칸씩 예쁘게 정렬 */
+.hm-inventory-grid {
+    display: grid !important;
+    grid-template-columns: repeat(4, 1fr) !important;
+    gap: 12px !important;
+}
+
+/* [영웅] 페이퍼돌(장비창) 여백 및 비율 최적화 */
+.hm-paper-doll {
+    margin-top: 20px !important;
+    height: 420px !important; 
+    border-width: 4px !important;
+}
+
+/* 3. ⚡ 스킬 관리 (Skill Manager) 3열 완벽 분할 */
+#skill-ui-content .manage-container {
+    display: grid !important;
+    /* 로스터(260) | 장착스킬(380) | 전체스킬(남는공간전부) */
+    grid-template-columns: 260px 380px minmax(400px, 1fr) !important;
+    gap: 25px !important;
+    padding: 25px !important;
+}
+#skill-ui-content .manage-col {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+/* 4. 👥 파티 관리 (Party Manager) 카드 크기 및 간격 확장 */
+.party-slots-container {
+    display: flex !important;
+    justify-content: center !important;
+    gap: 25px !important;
+    padding: 20px 0 !important;
+}
+.party-slot-card {
+    width: 160px !important;
+    height: 240px !important;
+}
+.party-slot-img, .party-slot-fallback {
+    width: 130px !important;
+    height: 130px !important;
+}
+.party-roster-list {
+    display: grid !important;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)) !important;
+    gap: 20px !important;
+}
+
+/* 5. 🏰 마을 (Village Center) 1열 텍스트 -> 4열 대형 카드 그리드로 전면 개편 */
+.village-layout {
+    width: 100% !important;
+    height: 100% !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    background: url('data:image/svg+xml;utf8,<svg opacity="0.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><filter id="n"><feTurbulence type="fractalNoise" baseFrequency="0.4"/></filter><rect width="100" height="100" filter="url(%23n)"/></svg>') var(--panel-bg) !important;
+    padding: 50px !important;
+    box-sizing: border-box !important;
+}
+.village-title-area h2 {
+    font-size: 54px !important;
+    color: var(--danger) !important;
+    border-bottom: 3px solid var(--danger) !important;
+    margin-bottom: 10px !important;
+    font-family: var(--font-game) !important;
+    letter-spacing: 5px !important;
+}
+.village-desc {
+    font-size: 16px !important;
+    color: var(--text-ink) !important;
+    margin-bottom: 50px !important;
+    font-weight: bold !important;
+}
+.village-grid {
+    display: grid !important;
+    grid-template-columns: repeat(4, 1fr) !important; /* 넓은 화면에 맞춰 4열 배치 */
+    gap: 30px !important;
+    width: 100% !important;
+    max-width: 1400px !important;
+}
+.village-card {
+    background: var(--item-bg) !important;
+    border: 3px double var(--border-dim) !important;
+    border-radius: 4px !important;
+    height: 180px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    box-shadow: 4px 6px 10px rgba(0,0,0,0.3) !important;
+    transition: all 0.2s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
+    cursor: pointer !important;
+    color: var(--wood-dark) !important;
+}
+.village-card:hover {
+    transform: translateY(-8px) !important;
+    border-color: var(--danger) !important;
+    background: #f4ebd8 !important;
+    box-shadow: 6px 12px 20px rgba(139,0,0,0.3) !important;
+}
+.village-card .v-icon {
+    font-size: 54px !important;
+    margin-bottom: 15px !important;
+    filter: drop-shadow(2px 2px 2px rgba(0,0,0,0.2)) !important;
+}
+.village-card .v-name {
+    font-size: 20px !important;
+    font-weight: bold !important;
+    font-family: var(--font-game) !important;
+    color: var(--danger) !important;
+}
+.village-card .v-desc {
+    font-size: 13px !important;
+    color: var(--text-ink) !important;
+    margin-top: 10px !important;
+    font-family: var(--font-main) !important;
+    font-weight: bold !important;
+}
+/* =========================================================================
+   [SUB MENU HEADER OVERHAUL] 상점/마을 최상단 헤더 및 버튼 가독성 전면 개편
+   ========================================================================= */
+
+/* 헤더 컨테이너: 낡은 고목나무 간판 느낌으로 넓고 웅장하게 */
+#scene-sub-menu > div:first-child:not(.sub-menu-content),
+.sub-header {
+    height: 80px !important;
+    background: linear-gradient(to bottom, var(--wood-dark), #1a110a) !important;
+    border-bottom: 4px double var(--border-dim) !important;
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    padding: 0 40px !important;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.8) !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    z-index: 10 !important;
+}
+
+/* 타이틀 (예: ALCHEMY LAB): 빛나는 황금색과 그림자로 가독성 극대화 */
+#sub-menu-title {
+    font-family: var(--font-game) !important;
+    font-size: 32px !important;
+    color: var(--gold) !important;
+    letter-spacing: 4px !important;
+    text-shadow: 2px 2px 0 #000, 0 0 15px rgba(184, 134, 11, 0.6) !important;
+    font-weight: bold !important;
+    display: flex !important;
+    align-items: center !important;
+    gap: 15px !important;
+}
+
+/* 우측 컨트롤 그룹 (골드 + 버튼) 정렬 */
+#scene-sub-menu > div:first-child:not(.sub-menu-content) {
+    display: flex !important;
+    align-items: center !important;
+}
+
+/* 골드 표시 (어두운 빨간색 -> 검은색 가죽 패드 위의 빛나는 황금색으로 변경) */
+#sub-menu-gold {
+    font-family: var(--font-game) !important;
+    font-size: 20px !important;
+    color: #ffd700 !important; /* 무조건 눈에 띄는 밝은 황금색 */
+    background: rgba(0, 0, 0, 0.7) !important;
+    padding: 10px 25px !important;
+    border-radius: 4px !important;
+    border: 2px solid var(--border-dim) !important;
+    box-shadow: inset 0 0 10px rgba(0,0,0,0.8) !important;
+    font-weight: bold !important;
+    letter-spacing: 1px !important;
+    margin-left: auto !important; /* 좌측 공간을 모두 밀어내어 우측 정렬 */
+    margin-right: 25px !important; /* 뒤로가기 버튼과의 간격 */
+    display: flex !important;
+    align-items: center !important;
+}
+
+/* 하얀색 기본 BACK 버튼 -> 중세풍 나무/양피지 버튼으로 환골탈태 */
+#btn-sub-close {
+    font-family: var(--font-game) !important;
+    font-size: 16px !important;
+    font-weight: bold !important;
+    color: #ebd9b4 !important;
+    background: var(--wood-dark) !important;
+    border: 2px solid var(--border-dim) !important;
+    padding: 12px 35px !important;
+    border-radius: 2px !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+    box-shadow: 2px 3px 0 #000 !important;
+    letter-spacing: 2px !important;
+    text-transform: uppercase !important;
+}
+
+/* BACK 버튼 호버 애니메이션 */
+#btn-sub-close:hover {
+    background: var(--danger) !important;
+    border-color: var(--gold) !important;
+    color: #fff !important;
+    transform: translateY(-2px) !important;
+    box-shadow: 2px 5px 8px rgba(0,0,0,0.6) !important;
+}
+
+/* BACK 버튼 클릭 애니메이션 */
+#btn-sub-close:active {
+    transform: translate(2px, 3px) !important;
+    box-shadow: none !important;
+}
+/* =========================================================================
+   [SKILL MANAGER FIX] 3열 동일 너비 적용 및 스킬 카드 100% 확장 정렬
+   ========================================================================= */
+
+/* 1. 스킬 관리창 3열(로스터, 장착스킬, 전체스킬) 완벽한 1:1:1 비율 분할 */
+#skill-ui-content .manage-container {
+    display: grid !important;
+    grid-template-columns: repeat(3, 1fr) !important; /* 3기둥을 무조건 동일한 너비로 강제 고정 */
+    gap: 25px !important;
+    padding: 25px !important;
+}
+
+/* 2. 우측 스킬 목록과 폴더가 우측 여백 없이 꽉 차도록 확장 */
+.skill-list-container,
+.skill-card-row,
+.skill-category-folder {
+    width: 100% !important;
+    box-sizing: border-box !important;
+}
+
+/* 3. 스킬 카드 자체가 텍스트 길이에 상관없이 좌우로 100% 늘어나도록 설정 */
+.ts-skill-card {
+    width: 100% !important;
+    flex: 1 1 auto !important; /* 부모 상자의 남는 빈 공간을 끝까지 채움 */
+    box-sizing: border-box !important;
+}
+/* =========================================================================
+   [SKILL MANAGER DETAIL FIX] 장착 스킬 간격 통일 & 스크롤 투과 현상 해결
+   ========================================================================= */
+
+/* 1. 장착한 스킬 슬롯의 간격을 완벽하게 일정하게 맞춤 */
+#skill-equipped-panel {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 12px !important; /* 개별 마진 대신 부모 컨테이너에서 12px 간격을 강제 통제 */
+}
+
+.equipped-slot, 
+#skill-equipped-panel .ts-skill-card {
+    margin-bottom: 0 !important; /* 기존에 들쭉날쭉하게 적용되던 개별 여백을 완전히 제거 */
+}
+
+/* 2. 배운 스킬 상단 필터링 버튼 뒤로 스크롤이 비쳐 보이는 현상 완벽 차단 */
+.skill-filter-bar {
+    position: sticky !important;
+    top: -15px !important;        /* 부모의 패딩(15px) 영역 꼭대기까지 바를 끌어올림 */
+    margin-top: -15px !important; /* 여백을 덮어씌우기 위해 위로 당김 */
+    padding-top: 15px !important; /* 당겨진 만큼 안쪽 여백을 다시 주어 버튼 위치는 정상 복구 */
+    background: var(--panel-bg) !important; /* 종이 질감 배경을 완전히 불투명하게 채움 */
+    z-index: 100 !important;      /* 스크롤되는 글자들보다 무조건 위에 띄움 */
+    
+    /* 필터바 아래로 스크롤이 넘어갈 때 더 입체감 있게 보이도록 그림자 추가 */
+    box-shadow: 0 10px 10px -10px rgba(0,0,0,0.3) !important; 
+}
+/* =========================================================================
+   [SCROLL BOTTOM FIX] 스킬 창 스크롤 하단 넉넉한 여백 추가 (잘림 방지)
+   ========================================================================= */
+
+/* 장착 스킬 및 배운 스킬 패널의 바닥에 40px의 가짜 여백을 생성 */
+#skill-equipped-panel,
+#skill-all-panel {
+    padding-bottom: 40px !important; 
+}
+
+/* 스킬 리스트 컨테이너 자체에도 추가 마진을 주어 마지막 항목이 안전하게 위로 올라오게 함 */
+.skill-list-container {
+    padding-bottom: 20px !important;
+}
+/* =========================================================================
+   [SCROLL BOTTOM FIX UPDATE] 좌측 로스터 및 인벤토리 하단 여백 추가
+   ========================================================================= */
+
+/* 스킬 창의 로스터, 영웅 창의 로스터, 영웅 창의 인벤토리 하단에 여유 공간(40px) 강제 생성 */
+#skill-manage-list,
+#manage-list,
+#manage-inventory {
+    padding-bottom: 40px !important;
+}
+/* =========================================================================
+   [CINEMATIC SRPG UI] 플로팅 프로필 카드 슬라이드 애니메이션 & 레이아웃
+   ========================================================================= */
+
+/* 1. 로그창 위치 (중앙 하단 지형정보와 우측 패널 사이) */
+#battle-log-wrapper {
+    position: absolute !important;
+    bottom: 20px !important;
+    right: 320px !important; /* 우측 사이드바(너비 280px + 여백 20px) 왼쪽으로 배치 */
+    width: 300px !important;
+    height: 200px !important;
+    z-index: 10000;
+}
+
+/* 내부 위젯 박스 스타일 */
+.terrain-badge-unit {
+    background: var(--panel-bg, rgba(26, 18, 16, 0.95)) !important;
+    border: 3px double var(--border-dim, #5d4037) !important;
+    border-radius: 12px !important;
+    padding: 10px 25px !important;
+    display: flex !important;
+    flex-direction: row !important; /* 가로 정렬 강제 */
+    align-items: center !important;
+    gap: 20px !important;
+    box-shadow: 0 5px 20px rgba(0,0,0,0.8) !important;
+    white-space: nowrap !important; /* 텍스트 줄바꿈 방지 */
+}
+
+/* 3. 좌우측 하단 프로필 컨테이너 고정 */
+#sidebar-left { bottom: 20px !important; left: 20px !important; justify-content: flex-end !important; }
+#sidebar-right { bottom: 20px !important; right: 20px !important; justify-content: flex-end !important; top: auto !important; height: auto !important;}
+
+/* 4. 접히고 펴지는 프로필 카드 디자인 */
+.srpg-profile-card {
+    background: var(--panel-bg, rgba(26, 18, 16, 0.95));
+    border: 3px double var(--wood-dark, #5d4037);
+    border-radius: 8px;
+    box-shadow: 0 5px 20px rgba(0,0,0,0.8);
+    pointer-events: auto;
+    width: 280px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    transition: all 0.3s ease;
+    max-height: 85vh; /* 화면 높이를 넘어가지 않도록 제한 */
+}
+
+/* 항상 보이는 상단 요약부 (초상화 + 게이지 바) */
+.srpg-profile-header {
+    display: flex;
+    flex-direction: column; /* 세로 정렬 (초상화 꽉 차게) */
+    padding: 0;
+    cursor: pointer;
+    position: relative;
+    background: transparent;
+    flex-shrink: 0; /* ⭐ 카드가 화면 밖으로 넘치려 해도 초상화는 절대 수축/잘리지 않게 강제 고정 */
+}
+.srpg-profile-header:hover {
+    background: rgba(184, 134, 11, 0.1);
+}
+/* 클릭 유도 화살표 */
+.srpg-toggle-hint {
+    position: absolute; top: 5px; right: 10px; font-size: 10px; color: var(--gold); display: flex; align-items: center; gap: 4px; cursor: pointer;
+}
+.srpg-toggle-hint-icon {
+    display: inline-block; transition: transform 0.3s;
+}
+.srpg-profile-card.expanded .srpg-toggle-hint-icon { transform: rotate(180deg); }
+
+/* 숨겨진 상세 정보부 (상태, 패시브, 전투스탯) - 스르륵 올라오는 효과 */
+.srpg-profile-details {
+    max-height: 0;
+    opacity: 0;
+    overflow-y: auto; /* ⭐ 내용물이 너무 길면 초상화를 밀어내지 않고 내부 스크롤바 생성 */
+    transition: max-height 0.4s cubic-bezier(0.25, 0.8, 0.25, 1), opacity 0.3s ease, padding 0.3s ease;
+    padding: 0 10px;
+    background: rgba(93, 64, 55, 0.05); /* 양피지 테마 배경 */
+    border-top: 2px solid transparent;
+}
+/* 카드가 expanded 클래스를 가지면 펴짐 */
+.srpg-profile-card.expanded .srpg-profile-details {
+    max-height: 70vh; /* ⭐ 높이를 대폭 확장하여 스크롤 없이 한 번에 다 보이도록 근본 해결 */
+    flex: 1 1 auto;
+    opacity: 1;
+    padding: 15px 10px;
+    border-top-color: var(--border-dim);
+}
+/* =========================================
+   2. CURSORS & VIEWPORT (BATTLEFIELD)
+   ========================================= */
+#viewport {
+    cursor: default;
+    position: relative;
+    overflow: hidden;
+    
+    /* ⭐ 낡은 전술 지도(양피지) 질감과 색상 적용 */
+    background-color: #d4bc96; 
+    background-image: 
+        radial-gradient(circle at center, transparent 30%, rgba(93, 64, 55, 0.8) 100%),
+        url('data:image/svg+xml;utf8,<svg opacity="0.25" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><filter id="n"><feTurbulence type="fractalNoise" baseFrequency="0.6"/></filter><rect width="100" height="100" filter="url(%23n)"/></svg>');
+    
+    border: 3px solid var(--border-dim);
+    box-shadow: inset 0 0 100px rgba(45, 30, 23, 0.95); /* 가장자리가 잉크/그을림으로 번진 듯한 비네팅 효과 */
+}
+#viewport.cursor-attack {
+    cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32" filter="drop-shadow(2px 2px 2px rgba(139,0,0,0.6))"><path d="M24 4l4 4-2 2 2 2-2 2-2-2-2 2 2 2-12 12-4-4 12-12 2 2-2-2 2-2-2-2 2-2z" fill="%23d4bc96" stroke="%233e2723" stroke-width="1.5"/><path d="M6 26l-4 4 4-4-2-2z" fill="%238b0000"/></svg>') 2 28, crosshair !important;
+}
+/* =========================================================================
+   [INVENTORY PERFECT FIT] 스크롤 없이 한 화면에 완벽하게 꽉 차게 맞춤 조절
+   ========================================================================= */
+
+/* 1. 장비창과 인벤토리 창 사이의 붕 뜨는 여백 축소 (20px -> 10px) */
+.manage-container > div:nth-child(3) {
+    gap: 10px !important;
+}
+
+/* 2. 패널 내부 여백(Padding)을 살짝 줄여서 알짜 공간 확보 */
+#manage-equip, #manage-inventory {
+    padding: 10px !important; 
+}
+
+/* 3. 연금술사 주머니(포켓)가 너무 거대해지는 것을 막고 아담하게 고정 */
+#manage-equip > div:last-child {
+    gap: 6px !important;
+    margin-top: 8px !important;
+}
+#manage-equip > div:last-child > div {
+    aspect-ratio: auto !important; /* 정사각형 고집 해제 */
+    height: 46px !important; /* 높이 고정으로 장비창 비대화 방지 */
+}
+
+/* 4. 인벤토리 그리드가 남은 세로 공간 전체를 완벽히 5줄로 나눠 가지도록 강제 설정 */
+.hm-inventory-grid {
+    grid-template-columns: repeat(4, 1fr) !important; 
+    grid-template-rows: repeat(5, 1fr) !important; /* 세로 5줄 꽉 채우기! */
+    gap: 6px !important;
+    height: 100% !important; /* 부모(인벤토리 창) 높이에 딱 맞춤 */
+}
+
+/* 5. 인벤토리 칸 역시 정사각형 비율을 풀고 그리드 셀에 유연하게 늘어나도록 변경 */
+.hm-inv-slot {
+    aspect-ratio: auto !important; 
+    height: 100% !important; 
+    min-height: 0 !important;
+}
+
+/* 6. 인벤토리 스크롤 완전 차단 */
+#manage-inventory {
+    overflow: hidden !important;
+    padding-bottom: 10px !important;
+}
